@@ -82,18 +82,16 @@ services:
         max-file: "3"
 
   db:
-    image: mysql:8.0
-    command: --default-authentication-plugin=mysql_native_password
+    image: postgres:16
     environment:
-      - MYSQL_ROOT_PASSWORD=root
-      - MYSQL_DATABASE=ragwebui
-      - MYSQL_USER=ragwebui
-      - MYSQL_PASSWORD=ragwebui
+      - POSTGRES_DB=ragwebui
+      - POSTGRES_USER=ragwebui
+      - POSTGRES_PASSWORD=ragwebui
       - TZ=Asia/Shanghai
     ports:
-      - "3306:3306"
+      - "5432:5432"
     volumes:
-      - mysql_data:/var/lib/mysql
+      - postgres_data:/var/lib/postgresql/data
     networks:
       - app_network
 
@@ -121,7 +119,7 @@ services:
       - app_network
 
 volumes:
-  mysql_data:
+  postgres_data:
   chroma_data:
   minio_data:
 

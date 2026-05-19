@@ -1,5 +1,4 @@
 from sqlalchemy import Column, Integer, String, ForeignKey, Text, DateTime, JSON, BigInteger, TIMESTAMP, text
-from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.orm import relationship
 from app.models.base import Base, TimestampMixin
 from datetime import datetime
@@ -10,7 +9,7 @@ class KnowledgeBase(Base, TimestampMixin):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False)
-    description = Column(LONGTEXT)
+    description = Column(Text)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

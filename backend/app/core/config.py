@@ -9,12 +9,12 @@ class Settings(BaseSettings):
     VERSION: str = "0.1.0"  # Project version
     API_V1_STR: str = "/api"  # API version string
 
-    # MySQL settings
-    MYSQL_SERVER: str = os.getenv("MYSQL_SERVER", "localhost")
-    MYSQL_PORT: int = int(os.getenv("MYSQL_PORT", "3306"))
-    MYSQL_USER: str = os.getenv("MYSQL_USER", "ragwebui")
-    MYSQL_PASSWORD: str = os.getenv("MYSQL_PASSWORD", "ragwebui")
-    MYSQL_DATABASE: str = os.getenv("MYSQL_DATABASE", "ragwebui")
+    # PostgreSQL settings
+    POSTGRES_SERVER: str = os.getenv("POSTGRES_SERVER", "db")
+    POSTGRES_PORT: int = int(os.getenv("POSTGRES_PORT", "5432"))
+    POSTGRES_USER: str = os.getenv("POSTGRES_USER", "ragwebui")
+    POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD", "ragwebui")
+    POSTGRES_DATABASE: str = os.getenv("POSTGRES_DATABASE", "ragwebui")
     SQLALCHEMY_DATABASE_URI: Optional[str] = None
 
     @property
@@ -22,8 +22,8 @@ class Settings(BaseSettings):
         if self.SQLALCHEMY_DATABASE_URI:
             return self.SQLALCHEMY_DATABASE_URI
         return (
-            f"mysql+mysqlconnector://{self.MYSQL_USER}:{self.MYSQL_PASSWORD}"
-            f"@{self.MYSQL_SERVER}:{self.MYSQL_PORT}/{self.MYSQL_DATABASE}"
+            f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
+            f"@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DATABASE}"
         )
 
     # JWT settings
