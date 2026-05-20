@@ -47,6 +47,7 @@ yarn-error.log*
 .vercel
 .turbo
 
+deploy.sh
 # IDE
 .idea/
 .vscode/
