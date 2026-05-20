@@ -17,6 +17,9 @@ RUN pnpm install --no-frozen-lockfile
 # Builder
 FROM base AS builder
 
+ARG NEXT_PUBLIC_API_URL=http://localhost:8765
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+
 RUN npm install -g pnpm@8
 
 WORKDIR /app
