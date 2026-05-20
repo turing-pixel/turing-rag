@@ -40,6 +40,7 @@ out/
 .env.development.local
 .env.test.local
 .env.production.local
+.env.production
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -58,3 +59,7 @@ backend/static/
 backend/media/
 frontend/.env
 backend/.env
+chroma_data/
+minio_data/
+*.log
+.claude/

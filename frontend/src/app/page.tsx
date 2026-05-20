@@ -7,7 +7,7 @@ export default function Home() {
         {/* Hero Section */}
         <div className="text-center space-y-8 mb-24">
           <h1 className="text-6xl sm:text-7xl font-bold tracking-tight text-black">
-            RAG Web UI
+            TuringRAG
           </h1>
           <p className="text-xl sm:text-2xl text-gray-500 max-w-3xl mx-auto font-light leading-relaxed">
             Experience the next generation of AI interaction.
@@ -28,7 +28,7 @@ export default function Home() {
               Sign In
             </Link>
             <a
-              href="https://github.com/JohannLai/rag-web-ui"
+              href="https://github.com/turing-pixel/turing-rag"
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center justify-center gap-2 px-8 py-4 bg-gray-200 text-gray-800 rounded-full text-lg font-medium transition-all duration-300 hover:bg-gray-300 w-full sm:w-auto"
@@ -41,19 +41,19 @@ export default function Home() {
           </div>
           <div className="mt-12 flex justify-center space-x-4">
             <a
-              href="https://github.com/JohannLai/rag-web-ui"
+              href="https://github.com/turing-pixel/turing-rag"
               target="_blank"
               rel="noopener noreferrer"
             >
               <img
                 alt="GitHub stars"
-                src="https://img.shields.io/github/stars/JohannLai/rag-web-ui?style=social"
+                src="https://img.shields.io/github/stars/turing-pixel/turing-rag?style=social"
                 className="h-6"
               />
             </a>
             <img
               alt="License"
-              src="https://img.shields.io/github/license/JohannLai/rag-web-ui"
+              src="https://img.shields.io/github/license/turing-pixel/turing-rag"
               className="h-6"
             />
             <img
@@ -152,7 +152,7 @@ export default function Home() {
         <div className="text-center bg-gray-100 rounded-3xl p-16">
           <h2 className="text-4xl font-bold mb-6">Ready to get started?</h2>
           <p className="text-xl text-gray-500 mb-8 max-w-2xl mx-auto">
-            Join thousands of developers who are already building the future with RAG Web UI.
+            Join thousands of developers who are already building the future with TuringRAG.
           </p>
           <Link
             href="/register"

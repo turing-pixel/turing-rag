@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     VECTOR_STORE_TYPE: str = os.getenv("VECTOR_STORE_TYPE", "chroma")
 
     # Chroma DB settings
+    # CHROMA_MODE: persistent (local dev, no server) | http (Docker / chroma run)
+    CHROMA_MODE: str = os.getenv("CHROMA_MODE", "http")
+    CHROMA_PERSIST_DIRECTORY: str = os.getenv("CHROMA_PERSIST_DIRECTORY", "")
     CHROMA_DB_HOST: str = os.getenv("CHROMA_DB_HOST", "chromadb")
     CHROMA_DB_PORT: int = int(os.getenv("CHROMA_DB_PORT", "8000"))
 
@@ -77,9 +80,8 @@ class Settings(BaseSettings):
     # Ollama settings
     OLLAMA_API_BASE: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "deepseek-r1:7b"
-    OLLAMA_EMBEDDINGS_MODEL: str = os.getenv(
-        "OLLAMA_EMBEDDINGS_MODEL", "nomic-embed-text"
-    )  # Added this line
+    # Ollama embedding: bge-m3 (1024 dims, multilingual) or nomic-embed-text (768 dims, lightweight)
+    OLLAMA_EMBEDDINGS_MODEL: str = os.getenv("OLLAMA_EMBEDDINGS_MODEL", "bge-m3")
 
     # HuggingFace settings
     HUGGINGFACE_API_KEY: str = os.getenv("HUGGINGFACE_API_KEY", "")
@@ -89,6 +91,7 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
+        extra = "ignore"
 
 
 settings = Settings()

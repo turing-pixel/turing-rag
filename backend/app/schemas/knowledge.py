@@ -9,8 +9,9 @@ class KnowledgeBaseBase(BaseModel):
 class KnowledgeBaseCreate(KnowledgeBaseBase):
     pass
 
-class KnowledgeBaseUpdate(KnowledgeBaseBase):
-    pass
+class KnowledgeBaseUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
 
 class DocumentBase(BaseModel):
     file_name: str

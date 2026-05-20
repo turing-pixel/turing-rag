@@ -280,7 +280,7 @@ docker compose -f docker-compose.dev.yml up -d --build
 | OPENAI_EMBEDDINGS_MODEL     | OpenAI Embedding Model     | text-embedding-ada-002 | Required for OpenAI Embedding |
 | DASH_SCOPE_API_KEY          | DashScope API Key          | -                      | Required for DashScope        |
 | DASH_SCOPE_EMBEDDINGS_MODEL | DashScope Embedding Model  | -                      | Required for DashScope        |
-| OLLAMA_EMBEDDINGS_MODEL     | Ollama Embedding Model     | deepseek-r1:7b         | Required for Ollama Embedding |
+| OLLAMA_EMBEDDINGS_MODEL     | Ollama Embedding Model (`bge-m3` or `nomic-embed-text`) | bge-m3 | Required for Ollama Embedding |
 
 ### Vector Database Configuration
 

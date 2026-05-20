@@ -29,7 +29,9 @@ ollama --version
 我们需要两个模型：
 
 - deepseek-r1:7b 用于对话生成
-- nomic-embed-text 用于文本向量化
+- 向量模型二选一（在 `.env` 里通过 `OLLAMA_EMBEDDINGS_MODEL` 配置）：
+  - **bge-m3**（推荐，多语言、中文效果更好，约 1.2GB）
+  - **nomic-embed-text**（更轻量、更快，约 274MB）
 
 执行以下命令下载模型：
 
@@ -37,8 +39,9 @@ ollama --version
 # 下载对话模型
 ollama pull deepseek-r1:7b
 
-# 下载向量模型  
-ollama pull nomic-embed-text
+# 下载向量模型（二选一）
+ollama pull bge-m3
+# ollama pull nomic-embed-text
 ````
 
 ## 🔧 部署知识库系统
@@ -68,7 +71,8 @@ OLLAMA_API_BASE=http://host.docker.internal:11434
 OLLAMA_MODEL=deepseek-r1:7b
 # Embedding 配置
 EMBEDDINGS_PROVIDER=ollama
-OLLAMA_EMBEDDINGS_MODEL=nomic-embed-text
+OLLAMA_EMBEDDINGS_MODEL=bge-m3
+# OLLAMA_EMBEDDINGS_MODEL=nomic-embed-text
 
 # 向量数据库配置
 VECTOR_STORE_TYPE=chroma

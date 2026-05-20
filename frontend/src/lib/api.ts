@@ -1,3 +1,5 @@
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8765";
+
 interface FetchOptions extends Omit<RequestInit, 'body' | 'headers'> {
   data?: any;
   headers?: Record<string, string>;
@@ -10,7 +12,7 @@ export class ApiError extends Error {
   }
 }
 
-export async function fetchApi(fullUrl: string, options: FetchOptions = {}) {
+async function fetchApi(path: string, options: FetchOptions = {}) {
   const { data, headers: customHeaders = {}, ...restOptions } = options;
 
   // Get token from localStorage
@@ -48,7 +50,7 @@ export async function fetchApi(fullUrl: string, options: FetchOptions = {}) {
   }
 
   try {
-    const response = await fetch(fullUrl, config);
+    const response = await fetch(`${API_BASE}${path}`, config);
 
     if (response.status === 401) {
       if (typeof window !== 'undefined') {

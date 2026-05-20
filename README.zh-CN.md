@@ -287,7 +287,7 @@ docker compose -f docker-compose.dev.yml up -d --build
 | OPENAI_EMBEDDINGS_MODEL     | OpenAI Embedding 模型    | text-embedding-ada-002 | 使用 OpenAI Embedding 时必填 |
 | DASH_SCOPE_API_KEY          | DashScope API 密钥       | -                      | 使用 DashScope 时必填        |
 | DASH_SCOPE_EMBEDDINGS_MODEL | DashScope Embedding 模型 | -                      | 使用 DashScope 时必填        |
-| OLLAMA_EMBEDDINGS_MODEL     | Ollama Embedding 模型    | -                      | 使用 Ollama Embedding 时必填 |
+| OLLAMA_EMBEDDINGS_MODEL     | Ollama Embedding 模型（`bge-m3` 或 `nomic-embed-text`） | bge-m3 | 使用 Ollama Embedding 时必填 |
 
 ### 向量数据库配置
 

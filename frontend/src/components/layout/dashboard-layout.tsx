@@ -63,7 +63,7 @@ export default function DashboardLayout({
                 alt="Logo"
                 className="w-16 h-16 rounded-lg"
               />
-              RAG Web UI
+              TuringRAG
             </Link>
           </div>
 

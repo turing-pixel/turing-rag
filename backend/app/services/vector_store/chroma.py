@@ -2,20 +2,17 @@ from typing import List, Any
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_chroma import Chroma
-import chromadb 
-from app.core.config import settings
 
 from .base import BaseVectorStore
+from .chroma_client import create_chroma_client
+
 
 class ChromaVectorStore(BaseVectorStore):
     """Chroma vector store implementation"""
     
     def __init__(self, collection_name: str, embedding_function: Embeddings, **kwargs):
         """Initialize Chroma vector store"""
-        chroma_client = chromadb.HttpClient(
-            host=settings.CHROMA_DB_HOST,
-            port=settings.CHROMA_DB_PORT,
-        )
+        chroma_client = create_chroma_client()
         
         self._store = Chroma(
             client=chroma_client,

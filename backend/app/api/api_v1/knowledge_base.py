@@ -1,4 +1,5 @@
 import hashlib
+import os
 from typing import List, Any, Dict
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks, Query
 from sqlalchemy.orm import Session
@@ -127,7 +128,20 @@ def update_knowledge_base(
     if not kb:
         raise HTTPException(status_code=404, detail="Knowledge base not found")
 
-    for field, value in kb_in.dict(exclude_unset=True).items():
+    update_data = kb_in.model_dump(exclude_unset=True)
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    if "name" in update_data:
+        name = (update_data["name"] or "").strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Name cannot be empty")
+        update_data["name"] = name
+
+    if "description" in update_data and update_data["description"] is not None:
+        update_data["description"] = update_data["description"].strip() or None
+
+    for field, value in update_data.items():
         setattr(kb, field, value)
 
     db.add(kb)
@@ -254,40 +268,36 @@ async def upload_kb_documents(
             })
             continue
         
-        # 3. 上传到临时目录
-        temp_path = f"kb_{kb_id}/temp/{file.filename}"
-        await file.seek(0)
-        try:
-            minio_client = get_minio_client()
-            file_size = len(file_content)  # 使用之前读取的文件内容长度
-            minio_client.put_object(
-                bucket_name=settings.MINIO_BUCKET_NAME,
-                object_name=temp_path,
-                data=file.file,
-                length=file_size,  # 指定文件大小
-                content_type=file.content_type
-            )
-        except MinioException as e:
-            logger.error(f"Failed to upload file to MinIO: {str(e)}")
-            raise HTTPException(status_code=500, detail="Failed to upload file")
-        
-        # 4. 创建上传记录
+        # 3. 保存到本地临时目录
+        local_dir = "/tmp/rag_uploads"
+        os.makedirs(local_dir, exist_ok=True)
+
+        # 先创建上传记录获取 ID
         upload = DocumentUpload(
             knowledge_base_id=kb_id,
             file_name=file.filename,
             file_hash=file_hash,
             file_size=len(file_content),
             content_type=file.content_type,
-            temp_path=temp_path
+            temp_path=""  # 暂时为空
         )
         db.add(upload)
         db.commit()
         db.refresh(upload)
-        
+
+        # 用 upload.id 构建本地路径
+        local_path = f"{local_dir}/{upload.id}_{file.filename}"
+        with open(local_path, "wb") as f:
+            f.write(file_content)
+
+        # 更新 temp_path 为本地路径
+        upload.temp_path = local_path
+        db.commit()
+
         results.append({
             "upload_id": upload.id,
             "file_name": file.filename,
-            "temp_path": temp_path,
+            "temp_path": local_path,
             "status": "pending",
             "skip_processing": False
         })

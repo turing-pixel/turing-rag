@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import DashboardLayout from "@/components/layout/dashboard-layout";
 import { api, ApiError } from "@/lib/api";
@@ -16,6 +16,7 @@ interface KnowledgeBase {
 
 export default function NewChatPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
   const [selectedKB, setSelectedKB] = useState<number | null>(null);
   const [title, setTitle] = useState("");
@@ -32,6 +33,17 @@ export default function NewChatPage() {
     try {
       const data = await api.get("/api/knowledge-base");
       setKnowledgeBases(data);
+
+      const kbIdParam = searchParams.get("kb_id");
+      if (kbIdParam) {
+        const kbId = Number(kbIdParam);
+        const kb = data.find((item: KnowledgeBase) => item.id === kbId);
+        if (kb) {
+          setSelectedKB(kbId);
+          setTitle((prev) => prev || `Chat - ${kb.name}`);
+        }
+      }
+
       setIsLoading(false);
     } catch (error) {
       console.error("Failed to fetch knowledge bases:", error);
