@@ -32,6 +32,39 @@ from app.services.vector_store import VectorStoreFactory
 from app.services.embedding.embedding_factory import EmbeddingsFactory
 from app.services.vector_store.base import BaseVectorStore
 
+EMBED_BATCH_SIZE = 64
+CHUNK_PROGRESS_COMMIT_EVERY = 50
+
+# Progress bands (monotonic 0-100)
+_PROGRESS_RESOLVE = 5
+_PROGRESS_LOAD = 15
+_PROGRESS_SPLIT = 25
+_PROGRESS_STORE_START = 30
+_PROGRESS_STORE_END = 55
+_PROGRESS_EMBED_START = 55
+_PROGRESS_EMBED_END = 95
+_PROGRESS_DONE = 100
+
+
+def _update_task_progress(
+    task: ProcessingTask,
+    db: Session,
+    progress: int,
+    message: Optional[str] = None,
+    *,
+    commit: bool = True,
+) -> None:
+    """Update task progress; only increases (monotonic)."""
+    progress = max(0, min(100, progress))
+    current = task.progress or 0
+    if progress < current and task.status == "processing":
+        return
+    task.progress = max(current, progress)
+    if message is not None:
+        task.progress_message = message
+    if commit:
+        db.commit()
+
 
 def _permanent_minio_path(kb_id: int, file_name: str) -> str:
     return f"kb_{kb_id}/{file_name}"
@@ -366,9 +399,15 @@ async def process_document_background(
     try:
         logger.info(f"Task {task_id}: Setting status to processing")
         task.status = "processing"
+        task.progress = 0
+        task.progress_message = None
+        task.error_message = None
         db.commit()
 
         minio_client = get_minio_client()
+        _update_task_progress(
+            task, db, _PROGRESS_RESOLVE, "Resolving file", commit=True
+        )
         local_temp_path = _resolve_local_file_path(
             temp_path, file_name, kb_id, task_id, db, minio_client, logger
         )
@@ -378,6 +417,9 @@ async def process_document_background(
             _, ext = os.path.splitext(file_name)
             ext = ext.lower()
 
+            _update_task_progress(
+                task, db, _PROGRESS_LOAD, "Loading document", commit=True
+            )
             logger.info(f"Task {task_id}: Loading document with extension {ext}")
             # 选择合适的加载器
             if ext == ".pdf":
@@ -393,13 +435,17 @@ async def process_document_background(
             documents = loader.load()
             logger.info(f"Task {task_id}: Document loaded successfully")
 
+            _update_task_progress(
+                task, db, _PROGRESS_SPLIT, "Splitting into chunks", commit=True
+            )
             logger.info(f"Task {task_id}: Splitting document into chunks")
             text_splitter = RecursiveCharacterTextSplitter(
                 chunk_size=chunk_size,
                 chunk_overlap=chunk_overlap
             )
             chunks = text_splitter.split_documents(documents)
-            logger.info(f"Task {task_id}: Document split into {len(chunks)} chunks")
+            total_chunks = len(chunks)
+            logger.info(f"Task {task_id}: Document split into {total_chunks} chunks")
 
             # 3. 创建向量存储
             logger.info(f"Task {task_id}: Initializing vector store")
@@ -470,6 +516,7 @@ async def process_document_background(
 
             # 6. 存储文档块
             logger.info(f"Task {task_id}: Storing document chunks")
+            store_span = _PROGRESS_STORE_END - _PROGRESS_STORE_START
             for i, chunk in enumerate(chunks):
                 # 为每个 chunk 生成唯一的 ID
                 chunk_id = hashlib.sha256(
@@ -495,18 +542,56 @@ async def process_document_background(
                     ).hexdigest()
                 )
                 db.add(doc_chunk)
-                if i > 0 and i % 100 == 0:
+                if total_chunks > 0 and (
+                    i == total_chunks - 1
+                    or (i + 1) % CHUNK_PROGRESS_COMMIT_EVERY == 0
+                ):
+                    stored = i + 1
+                    pct = _PROGRESS_STORE_START + int(
+                        store_span * stored / total_chunks
+                    )
+                    _update_task_progress(
+                        task,
+                        db,
+                        pct,
+                        f"Saving chunks {stored}/{total_chunks}",
+                        commit=True,
+                    )
+                elif i > 0 and i % 100 == 0:
                     logger.info(f"Task {task_id}: Stored {i} chunks")
                     db.commit()
 
-            # 7. 添加到向量存储
+            db.commit()
+
+            # 7. 添加到向量存储（分批以报告进度）
             logger.info(f"Task {task_id}: Adding chunks to vector store")
-            vector_store.add_documents(chunks)
+            embed_span = _PROGRESS_EMBED_END - _PROGRESS_EMBED_START
+            if total_chunks == 0:
+                _update_task_progress(
+                    task, db, _PROGRESS_EMBED_END, "Embedding", commit=True
+                )
+            else:
+                for start in range(0, total_chunks, EMBED_BATCH_SIZE):
+                    batch = chunks[start : start + EMBED_BATCH_SIZE]
+                    vector_store.add_documents(batch)
+                    done = min(start + len(batch), total_chunks)
+                    pct = _PROGRESS_EMBED_START + int(
+                        embed_span * done / total_chunks
+                    )
+                    _update_task_progress(
+                        task,
+                        db,
+                        pct,
+                        f"Embedding {done}/{total_chunks}",
+                        commit=True,
+                    )
             logger.info(f"Task {task_id}: Chunks added to vector store")
 
             # 8. 更新任务状态
             logger.info(f"Task {task_id}: Updating task status to completed")
             task.status = "completed"
+            task.progress = _PROGRESS_DONE
+            task.progress_message = None
             task.document_id = document.id
 
             # 9. 更新上传记录状态
@@ -563,6 +648,8 @@ async def queue_retry_failed_processing_tasks(kb_id: int) -> dict:
                 skipped += 1
                 continue
             task.status = "pending"
+            task.progress = 0
+            task.progress_message = None
             task.error_message = None
             db.commit()
             asyncio.create_task(

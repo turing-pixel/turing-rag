@@ -16,6 +16,8 @@ import { toast } from "sonner";
 import DashboardLayout from "@/components/layout/dashboard-layout";
 import { DashboardPageContainer } from "@/components/layout/dashboard-page-container";
 import { api, ApiError } from "@/lib/api";
+import { PROCESSING_POLL_INTERVAL_MS } from "@/lib/document-processing-poll";
+import { Progress } from "@/components/ui/progress";
 
 interface FileStatus {
   file: File;
@@ -49,6 +51,8 @@ interface ProcessingTask {
 interface TaskStatus {
   document_id: number | null;
   status: string;
+  progress?: number;
+  progress_message?: string | null;
   error_message: string | null;
   upload_id: number;
   file_name: string;
@@ -64,6 +68,9 @@ export default function UploadPage({
   const t = useTranslations("toasts");
   const [files, setFiles] = useState<FileStatus[]>([]);
   const [processingTasks, setProcessingTasks] = useState<ProcessingTask[]>([]);
+  const [taskProgress, setTaskProgress] = useState<
+    Record<number, { progress: number; message?: string | null }>
+  >({});
   const [isProcessing, setIsProcessing] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
 
@@ -188,6 +195,10 @@ export default function UploadPage({
       );
 
       let allCompleted = true;
+      const nextProgress: Record<
+        number,
+        { progress: number; message?: string | null }
+      > = {};
       setFiles((prev) =>
         prev.map((f) => {
           const task = processingTasks.find((t) => t.upload_id === f.uploadId);
@@ -196,6 +207,16 @@ export default function UploadPage({
             if (taskStatus.status !== "completed") {
               allCompleted = false;
             }
+            const progress =
+              typeof taskStatus.progress === "number"
+                ? taskStatus.progress
+                : taskStatus.status === "completed"
+                  ? 100
+                  : 0;
+            nextProgress[task.task_id] = {
+              progress,
+              message: taskStatus.progress_message,
+            };
             return {
               ...f,
               status:
@@ -211,6 +232,7 @@ export default function UploadPage({
           return f;
         })
       );
+      setTaskProgress(nextProgress);
 
       if (allCompleted) {
         setIsProcessing(false);
@@ -225,7 +247,7 @@ export default function UploadPage({
   useEffect(() => {
     let interval: NodeJS.Timeout;
     if (isProcessing) {
-      interval = setInterval(checkProcessingStatus, 2000);
+      interval = setInterval(checkProcessingStatus, PROCESSING_POLL_INTERVAL_MS);
     }
     return () => {
       if (interval) {
@@ -313,11 +335,23 @@ export default function UploadPage({
                       </div>
                     )}
                     {fileStatus.status === "processing" && (
-                      <div className="flex items-center space-x-2">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        <span className="text-muted-foreground">
-                          Processing...
-                        </span>
+                      <div className="flex min-w-[140px] flex-col items-end gap-1.5">
+                        <div className="flex items-center space-x-2">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span className="text-muted-foreground tabular-nums">
+                            {fileStatus.taskId != null &&
+                            taskProgress[fileStatus.taskId]
+                              ? `${taskProgress[fileStatus.taskId].progress}%`
+                              : t("uploadProcessing")}
+                          </span>
+                        </div>
+                        {fileStatus.taskId != null &&
+                          taskProgress[fileStatus.taskId] && (
+                            <Progress
+                              value={taskProgress[fileStatus.taskId].progress}
+                              className="h-1.5 w-28"
+                            />
+                          )}
                       </div>
                     )}
                     {fileStatus.status === "completed" && (

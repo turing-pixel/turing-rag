@@ -30,6 +30,7 @@ import {
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { FileText, LayoutGrid, List, Search } from "lucide-react";
 import { DocumentListSkeleton } from "@/components/skeletons/document-list-skeleton";
+import { processingStatusBadgeVariant } from "@/lib/processing-task-status-ui";
 
 const VIEW_MODE_STORAGE_KEY = "rag-web-ui:kb-documents-view";
 
@@ -51,14 +52,6 @@ interface Document {
 
 interface DocumentListProps {
   knowledgeBaseId: number;
-}
-
-function statusVariant(
-  status: string
-): "default" | "secondary" | "destructive" | "outline" {
-  if (status === "completed") return "secondary";
-  if (status === "failed") return "destructive";
-  return "default";
 }
 
 function formatFileSize(bytes: number): string {
@@ -88,7 +81,7 @@ function DocumentStatusBadge({
     return <span className="text-sm text-muted-foreground">—</span>;
   }
   return (
-    <Badge variant={statusVariant(task.status)}>
+    <Badge variant={processingStatusBadgeVariant(task.status)}>
       {formatStatus(task.status)}
     </Badge>
   );

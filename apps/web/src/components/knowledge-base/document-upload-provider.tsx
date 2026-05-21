@@ -259,18 +259,20 @@ export function DocumentUploadProvider({
     const job = activeJob ?? loadProcessingJob();
     if (!job) return;
 
-    setSession((prev) => {
-      if (prev?.knowledgeBaseId === job.knowledgeBaseId) {
-        return prev;
-      }
-      return {
-        knowledgeBaseId: job.knowledgeBaseId,
-        sessionKey: Date.now(),
-        resumeMode: true,
-      };
+    if (!activeJob) {
+      setActiveJob(job);
+      isProcessingRef.current = true;
+      setIsUploadProcessing(true);
+      runJobPoll(job);
+    }
+
+    setSession({
+      knowledgeBaseId: job.knowledgeBaseId,
+      sessionKey: Date.now(),
+      resumeMode: true,
     });
     setOpen(true);
-  }, [activeJob]);
+  }, [activeJob, runJobPoll]);
 
   const handleProcessingChange = useCallback((active: boolean) => {
     if (!active && !isProcessingRef.current) {
@@ -298,8 +300,20 @@ export function DocumentUploadProvider({
     if (!isProcessingRef.current) {
       setSession(null);
       pendingOnCompleteRef.current = undefined;
+    } else {
+      setSession((prev) =>
+        prev
+          ? { ...prev, resumeMode: true }
+          : activeJob
+            ? {
+                knowledgeBaseId: activeJob.knowledgeBaseId,
+                sessionKey: Date.now(),
+                resumeMode: true,
+              }
+            : null
+      );
     }
-  }, []);
+  }, [activeJob]);
 
   const dialogKnowledgeBaseId =
     session?.knowledgeBaseId ?? activeJob?.knowledgeBaseId;
@@ -321,16 +335,15 @@ export function DocumentUploadProvider({
       {children}
       {mountDialog ? (
         <Dialog open={open} onOpenChange={handleOpenChange}>
-          <DialogContent
-            forceMount
-            className="flex max-h-[90vh] w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl"
-          >
-            <DialogHeader className="shrink-0 space-y-1.5 border-b px-6 pt-6 pb-4 text-left">
-              <DialogTitle>{t("addDocumentTitle")}</DialogTitle>
-              <DialogDescription>
-                {t("addDocumentDescription")}
-              </DialogDescription>
-            </DialogHeader>
+          <DialogContent forceMount className="gap-0 p-0 sm:max-w-3xl">
+            <div className="border-b px-6 pt-6 pb-4">
+              <DialogHeader>
+                <DialogTitle>{t("addDocumentTitle")}</DialogTitle>
+                <DialogDescription>
+                  {t("addDocumentDescription")}
+                </DialogDescription>
+              </DialogHeader>
+            </div>
             <DocumentUploadSteps
               key={session?.sessionKey ?? `resume-${dialogKnowledgeBaseId}`}
               layout="dialog"
@@ -338,10 +351,12 @@ export function DocumentUploadProvider({
               onComplete={handleUploadComplete}
               onProcessingChange={handleProcessingChange}
               resumeJob={
-                activeJob && (!session || session.resumeMode) ? activeJob : null
+                activeJob && (session?.resumeMode || !open) ? activeJob : null
               }
               sharedTaskStatuses={
-                isUploadProcessing ? processingTaskStatuses : undefined
+                activeJob || isUploadProcessing
+                  ? processingTaskStatuses
+                  : undefined
               }
             />
           </DialogContent>

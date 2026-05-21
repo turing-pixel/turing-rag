@@ -71,6 +71,8 @@ class ProcessingTask(Base):
     document_id = Column(Integer, ForeignKey("documents.id"), nullable=True)
     document_upload_id = Column(Integer, ForeignKey("document_uploads.id"), nullable=True)
     status = Column(String(50), default="pending")  # pending, processing, completed, failed
+    progress = Column(Integer, nullable=False, default=0, server_default="0")
+    progress_message = Column(String(255), nullable=True)
     error_message = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

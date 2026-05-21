@@ -561,6 +561,8 @@ async def get_processing_tasks(
         task.id: {
             "document_id": task.document_id,
             "status": task.status,
+            "progress": task.progress or 0,
+            "progress_message": task.progress_message,
             "error_message": task.error_message,
             "upload_id": task.document_upload_id,
             "file_name": task.document_upload.file_name if task.document_upload else None

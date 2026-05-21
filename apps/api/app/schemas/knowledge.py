@@ -75,6 +75,8 @@ class DocumentUploadResponse(DocumentUploadBase):
 
 class ProcessingTaskBase(BaseModel):
     status: str
+    progress: int = 0
+    progress_message: Optional[str] = None
     error_message: Optional[str] = None
 
 class ProcessingTaskCreate(ProcessingTaskBase):

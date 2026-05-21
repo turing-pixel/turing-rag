@@ -1,10 +1,27 @@
 "use client";
 
+import { useMemo } from "react";
 import { useTranslations } from "next-intl";
 import { useDocumentUpload } from "@/components/knowledge-base/document-upload-provider";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
-import { cn } from "@/lib/utils";
+
+function averageProgress(
+  statuses: Record<number, { progress?: number; status: string }>
+): number | null {
+  const tasks = Object.values(statuses);
+  if (tasks.length === 0) return null;
+  const sum = tasks.reduce(
+    (acc, task) =>
+      acc +
+      (task.status === "completed"
+        ? 100
+        : Math.max(0, Math.min(100, task.progress ?? 0))),
+    0
+  );
+  return Math.round(sum / tasks.length);
+}
 
 export function DocumentUploadActivityButton({
   className,
@@ -12,28 +29,42 @@ export function DocumentUploadActivityButton({
   className?: string;
 }) {
   const t = useTranslations("knowledgePage");
-  const { isUploadProcessing, openProcessingDialog, isUploadDialogOpen } =
-    useDocumentUpload();
+  const {
+    isUploadProcessing,
+    openProcessingDialog,
+    isUploadDialogOpen,
+    processingTaskStatuses,
+  } = useDocumentUpload();
+
+  const progress = useMemo(
+    () => averageProgress(processingTaskStatuses),
+    [processingTaskStatuses]
+  );
 
   if (!isUploadProcessing) {
     return null;
   }
 
+  const label =
+    progress != null && progress > 0
+      ? t("viewProcessingUploadWithProgress", { percent: progress })
+      : t("viewProcessingUpload");
+
   return (
-    <Button
-      type="button"
-      variant="outline"
-      size="icon-sm"
-      className={cn(
-        "size-8 shrink-0",
-        isUploadDialogOpen && "border-primary/50 bg-primary/5",
-        className
-      )}
-      title={t("viewProcessingUpload")}
-      aria-label={t("viewProcessingUpload")}
-      onClick={openProcessingDialog}
-    >
-      <Spinner className="text-primary" aria-hidden />
-    </Button>
+    <div className={className}>
+      <Button
+        type="button"
+        variant={isUploadDialogOpen ? "default" : "outline"}
+        size="icon-sm"
+        title={label}
+        aria-label={label}
+        onClick={openProcessingDialog}
+      >
+        <Spinner aria-hidden />
+      </Button>
+      {progress != null && progress > 0 ? (
+        <Badge variant="secondary">{progress}%</Badge>
+      ) : null}
+    </div>
   );
 }

@@ -1,14 +1,57 @@
 import { api } from "@/lib/api";
 
+/** Poll interval with real progress from the API (seconds-scale updates are enough). */
+export const PROCESSING_POLL_INTERVAL_MS = 4000;
+
 export type ProcessingTaskStatus = {
   document_id: number | null;
   upload_id: number;
   status: "pending" | "processing" | "completed" | "failed";
+  progress: number;
+  progress_message?: string | null;
   error_message?: string;
   file_name?: string;
 };
 
 export type ProcessingTaskStatusMap = Record<number, ProcessingTaskStatus>;
+
+export type TaskLookupFile = {
+  uploadId?: number;
+  taskId?: number;
+};
+
+/** Resolve polled task status for a pipeline file (by taskId, then uploadId). */
+export function resolveTaskForFile(
+  file: TaskLookupFile,
+  statuses: ProcessingTaskStatusMap,
+  resumeTasks?: { taskId: number; uploadId: number }[]
+): ProcessingTaskStatus | undefined {
+  if (file.taskId != null && statuses[file.taskId]) {
+    return statuses[file.taskId];
+  }
+  if (file.uploadId != null) {
+    const byUpload = Object.values(statuses).find(
+      (t) => t.upload_id === file.uploadId
+    );
+    if (byUpload) return byUpload;
+  }
+  if (file.uploadId != null && resumeTasks?.length) {
+    const persisted = resumeTasks.find((t) => t.uploadId === file.uploadId);
+    if (persisted && statuses[persisted.taskId]) {
+      return statuses[persisted.taskId];
+    }
+  }
+  return undefined;
+}
+
+export function mergeTaskStatusMaps(
+  ...maps: (ProcessingTaskStatusMap | undefined)[]
+): ProcessingTaskStatusMap {
+  return maps.reduce<ProcessingTaskStatusMap>(
+    (acc, map) => (map ? { ...acc, ...map } : acc),
+    {}
+  );
+}
 
 type TaskStatusResponse = Record<string, ProcessingTaskStatus>;
 
@@ -39,6 +82,13 @@ function parseTaskStatuses(
         document_id: raw.document_id ?? null,
         upload_id: raw.upload_id ?? uploadIdByTaskId.get(taskId) ?? 0,
         status: raw.status,
+        progress:
+          typeof raw.progress === "number"
+            ? Math.max(0, Math.min(100, raw.progress))
+            : raw.status === "completed"
+              ? 100
+              : 0,
+        progress_message: raw.progress_message ?? null,
         error_message: raw.error_message,
         file_name: raw.file_name,
       };
@@ -56,7 +106,7 @@ export function runProcessingPoll({
   onUpdate,
   onDone,
   onError,
-  pollIntervalMs = 2000,
+  pollIntervalMs = PROCESSING_POLL_INTERVAL_MS,
   maxRetries = 3,
 }: RunProcessingPollOptions): void {
   let statusPollRetries = 0;

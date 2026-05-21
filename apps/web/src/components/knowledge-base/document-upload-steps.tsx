@@ -1,41 +1,24 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
-import { FileIcon, defaultStyles } from "react-file-icon";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { DialogFooter } from "@/components/ui/dialog";
+import { Spinner } from "@/components/ui/spinner";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import {
-  Loader2,
-  Upload,
-  X,
-  Settings,
-  FileText,
-  Check,
-  ChevronLeft,
-} from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Upload, Settings, FileText, Check, ChevronLeft } from "lucide-react";
+import { DocumentProcessingPipelineList } from "@/components/knowledge-base/document-processing-pipeline-list";
+import { DocumentUploadDropzone } from "@/components/knowledge-base/document-upload-dropzone";
+import { DocumentUploadFileList } from "@/components/knowledge-base/document-upload-file-list";
+import { DocumentUploadPreviewPanel } from "@/components/knowledge-base/document-upload-preview-panel";
 import { useDocumentUpload } from "@/components/knowledge-base/document-upload-provider";
 import { api, ApiError } from "@/lib/api";
-import type { ProcessingTaskStatusMap } from "@/lib/document-processing-poll";
+import {
+  mergeTaskStatusMaps,
+  type ProcessingTaskStatusMap,
+} from "@/lib/document-processing-poll";
 import type { PersistedProcessingJob } from "@/lib/document-upload-persistence";
 import { useDropzone } from "react-dropzone";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
 import {
   Stepper,
   StepperConnector,
@@ -69,6 +52,7 @@ interface FileStatus {
     | "completed"
     | "error";
   uploadId?: number;
+  taskId?: number;
   documentId?: number;
   tempPath?: string;
   error?: string;
@@ -105,6 +89,8 @@ interface TaskStatus {
   document_id: number | null;
   upload_id: number;
   status: "pending" | "processing" | "completed" | "failed";
+  progress: number;
+  progress_message?: string | null;
   error_message?: string;
   file_name?: string;
 }
@@ -127,7 +113,7 @@ export function DocumentUploadSteps({
   sharedTaskStatuses,
   layout = "dialog",
 }: DocumentUploadStepsProps) {
-  const { startProcessingJob } = useDocumentUpload();
+  const { startProcessingJob, isUploadProcessing } = useDocumentUpload();
   const [currentStep, setCurrentStep] = useState(1);
   const [files, setFiles] = useState<FileStatus[]>([]);
   const [uploadedDocuments, setUploadedDocuments] = useState<{
@@ -183,6 +169,15 @@ export function DocumentUploadSteps({
   useEffect(() => {
     if (!resumeJob) return;
     setCurrentStep(3);
+    setFiles((prev) => {
+      if (prev.length >= resumeJob.tasks.length) return prev;
+      return resumeJob.tasks.map((t) => ({
+        file: new File([], t.fileName ?? `Document ${t.uploadId}`),
+        status: "processing" as const,
+        uploadId: t.uploadId,
+        taskId: t.taskId,
+      }));
+    });
   }, [resumeJob]);
 
   useEffect(() => {
@@ -196,7 +191,8 @@ export function DocumentUploadSteps({
           const task = Object.values(sharedTaskStatuses).find(
             (s) => s.upload_id === t.uploadId
           );
-          const name = task?.file_name ?? `Document ${t.uploadId}`;
+          const name =
+            task?.file_name ?? t.fileName ?? `Document ${t.uploadId}`;
           let status: FileStatus["status"] = "processing";
           if (task?.status === "completed") status = "completed";
           if (task?.status === "failed") status = "error";
@@ -204,6 +200,7 @@ export function DocumentUploadSteps({
             file: new File([], name),
             status,
             uploadId: t.uploadId,
+            taskId: t.taskId,
             documentId: task?.document_id ?? undefined,
             error: task?.error_message,
           };
@@ -448,11 +445,6 @@ export function DocumentUploadSteps({
 
     setIsLoading(true);
     onProcessingChange?.(true);
-    setFiles((prev) =>
-      prev.map((f) =>
-        f.status === "uploaded" ? { ...f, status: "processing" as const } : f
-      )
-    );
 
     try {
       const data = (await api.post(
@@ -477,6 +469,7 @@ export function DocumentUploadSteps({
           ...acc,
           [task.task_id]: {
             upload_id: task.upload_id,
+            progress: 0,
             document_id: null,
             status: "pending" as const,
           },
@@ -484,12 +477,29 @@ export function DocumentUploadSteps({
         {}
       );
       setTaskStatuses(initialStatuses);
+      setFiles((prev) =>
+        prev.map((f) => {
+          const match = data.tasks.find((t) => t.upload_id === f.uploadId);
+          if (match && (f.status === "uploaded" || f.status === "processing")) {
+            return {
+              ...f,
+              status: "processing" as const,
+              taskId: match.task_id,
+            };
+          }
+          return f;
+        })
+      );
       const job: PersistedProcessingJob = {
         knowledgeBaseId,
-        tasks: data.tasks.map((t) => ({
-          taskId: t.task_id,
-          uploadId: t.upload_id,
-        })),
+        tasks: data.tasks.map((t) => {
+          const file = files.find((f) => f.uploadId === t.upload_id);
+          return {
+            taskId: t.task_id,
+            uploadId: t.upload_id,
+            fileName: file?.file.name,
+          };
+        }),
         startedAt: Date.now(),
       };
       startProcessingJob(job, {
@@ -534,12 +544,27 @@ export function DocumentUploadSteps({
     handleProcess();
   };
 
+  const effectiveTaskStatuses = useMemo(
+    () => mergeTaskStatusMaps(sharedTaskStatuses, taskStatuses),
+    [sharedTaskStatuses, taskStatuses]
+  );
+
+  const resumeTaskList = resumeJob?.tasks;
+
+  const hasActiveProcessingTasks = Object.values(effectiveTaskStatuses).some(
+    (t) => t.status === "pending" || t.status === "processing"
+  );
+
+  const isStep3Processing =
+    isUploadProcessing || isLoading || hasActiveProcessingTasks;
+
   const uploadedFiles = files.filter((f) => f.status === "uploaded");
   const pipelineFiles = files.filter(
     (f) =>
       f.uploadId != null &&
       (f.status === "uploaded" ||
         f.status === "processing" ||
+        f.status === "completed" ||
         f.status === "error")
   );
   const hasPendingFiles = files.some((f) => f.status === "pending");
@@ -556,7 +581,7 @@ export function DocumentUploadSteps({
           onClick={handleFileUpload}
           disabled={!hasPendingFiles || isLoading}
         >
-          {isLoading && <Loader2 className="mr-2 size-4 animate-spin" />}
+          {isLoading ? <Spinner /> : null}
           {tStep("uploadFiles")}
         </Button>
       );
@@ -571,7 +596,7 @@ export function DocumentUploadSteps({
             onClick={handlePreview}
             disabled={isLoading || !selectedDocumentId}
           >
-            {isLoading && <Loader2 className="mr-2 size-4 animate-spin" />}
+            {isLoading ? <Spinner /> : null}
             {tStep("previewChunks")}
           </Button>
           <Button
@@ -589,16 +614,16 @@ export function DocumentUploadSteps({
       <Button
         type="button"
         onClick={handleProcessClick}
-        disabled={isLoading || uploadedFiles.length === 0}
+        disabled={isStep3Processing || uploadedFiles.length === 0}
       >
-        {isLoading ? (
+        {isStep3Processing ? (
           <>
-            <Loader2 className="mr-2 size-4 animate-spin" />
+            <Spinner />
             {tStep("processing")}
           </>
         ) : (
           <>
-            <Settings className="mr-2 size-4" />
+            <Settings data-icon="inline-start" aria-hidden />
             {tStep("process")}
           </>
         )}
@@ -606,38 +631,32 @@ export function DocumentUploadSteps({
     );
   };
 
-  const footer = (
-    <div
-      className={cn(
-        "flex w-full flex-col-reverse gap-2 sm:flex-row sm:items-center",
-        currentStep > 1 ? "sm:justify-between" : "sm:justify-end"
-      )}
-    >
-      {currentStep > 1 && (
+  const footerActions = renderStepFooter();
+
+  const footer =
+    currentStep > 1 ? (
+      <div className="flex w-full items-center justify-between gap-2">
         <Button
           type="button"
-          variant="ghost"
-          className="w-full sm:w-auto"
-          disabled={isLoading}
+          variant="outline"
+          disabled={isLoading || (currentStep === 3 && isStep3Processing)}
           onClick={() => setCurrentStep((s) => s - 1)}
         >
-          <ChevronLeft className="mr-1 size-4" aria-hidden />
+          <ChevronLeft data-icon="inline-start" aria-hidden />
           {tStep("back")}
         </Button>
-      )}
-      <div className="flex w-full flex-col-reverse gap-2 sm:ml-auto sm:w-auto sm:flex-row sm:justify-end">
-        {renderStepFooter()}
+        <div className="flex items-center gap-2">{footerActions}</div>
       </div>
-    </div>
-  );
+    ) : (
+      <div className="flex w-full justify-end">{footerActions}</div>
+    );
 
   const stepContent = (
-    <>
+    <div className="flex flex-col gap-6">
       <Stepper
         value={currentStep}
         stepCount={STEP_ITEMS.length}
         aria-label={tStep("stepsNavAria")}
-        className="mb-6"
       >
         <StepperList>
           {STEP_ITEMS.map(({ step: stepNum, icon: Icon, labelKey }) => (
@@ -659,258 +678,81 @@ export function DocumentUploadSteps({
       </Stepper>
 
       {currentStep === 1 && (
-        <div className="space-y-4">
-          <div
-            {...getRootProps()}
-            className={cn(
-              "rounded-lg border border-dashed px-6 py-10 text-center transition-colors",
-              isDragActive
-                ? "border-primary bg-primary/5"
-                : "border-border hover:border-primary/50 hover:bg-muted/30"
-            )}
-          >
-            <input {...getInputProps()} />
-            <Upload className="mx-auto size-10 text-muted-foreground" />
-            <p className="mt-3 text-sm font-medium">{tStep("dropzoneTitle")}</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {tStep("dropzoneHint")}
-            </p>
-          </div>
-
-          {files.length > 0 && (
-            <ul className="max-h-64 divide-y overflow-y-auto rounded-lg border">
-              {files.map((fileStatus) => (
-                <li
-                  key={fileStatus.file.name}
-                  className="flex items-center justify-between gap-3 px-3 py-2.5"
-                >
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div className="size-7 shrink-0">
-                      <FileIcon
-                        extension={fileStatus.file.name.split(".").pop()}
-                        {...defaultStyles[
-                          fileStatus.file.name
-                            .split(".")
-                            .pop() as keyof typeof defaultStyles
-                        ]}
-                      />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">
-                        {fileStatus.file.name}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {(fileStatus.file.size / 1024 / 1024).toFixed(2)} MB
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    {fileStatus.status === "uploading" && (
-                      <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
-                    )}
-                    {fileStatus.status === "uploaded" && (
-                      <span className="text-xs text-green-600 dark:text-green-500">
-                        {tStep("uploaded")}
-                      </span>
-                    )}
-                    {fileStatus.status === "completed" && (
-                      <span className="text-xs text-muted-foreground">
-                        {fileStatus.error || tStep("existsSkipped")}
-                      </span>
-                    )}
-                    {fileStatus.status === "error" && (
-                      <span
-                        className="max-w-48 truncate text-xs text-destructive"
-                        title={fileStatus.error}
-                      >
-                        {fileStatus.error}
-                      </span>
-                    )}
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={tStep("removeFileAria")}
-                      onClick={() => removeFile(fileStatus.file)}
-                    >
-                      <X className="size-4" />
-                    </Button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
+        <div className="flex flex-col gap-4">
+          <DocumentUploadDropzone
+            rootProps={getRootProps()}
+            inputProps={getInputProps()}
+            title={tStep("dropzoneTitle")}
+            hint={tStep("dropzoneHint")}
+            isDragActive={isDragActive}
+          />
+          <DocumentUploadFileList
+            files={files}
+            uploadedLabel={tStep("uploaded")}
+            existsLabel={tStep("existsSkipped")}
+            removeAriaLabel={tStep("removeFileAria")}
+            onRemove={removeFile}
+          />
         </div>
       )}
 
       {currentStep === 2 && (
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label className="text-muted-foreground">
-              {tStep("previewHeading")}
-            </Label>
-            <Select
-              value={selectedDocumentId?.toString()}
-              onValueChange={(value: string) =>
-                setSelectedDocumentId(parseInt(value))
-              }
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder={tStep("selectDocPlaceholder")} />
-              </SelectTrigger>
-              <SelectContent>
-                {uploadedFiles.map((f) => (
-                  <SelectItem key={f.uploadId} value={f.uploadId!.toString()}>
-                    {f.file.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <Accordion type="single" collapsible className="w-full">
-            <AccordionItem value="settings" className="border-b-0">
-              <AccordionTrigger className="py-2 text-sm hover:no-underline">
-                {tStep("advancedSettings")}
-              </AccordionTrigger>
-              <AccordionContent>
-                <div className="grid gap-4 pt-2 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="chunk-size">{tStep("chunkSize")}</Label>
-                    <Input
-                      id="chunk-size"
-                      type="number"
-                      value={chunkSize}
-                      onChange={(e) => {
-                        const n = parseInt(e.target.value, 10);
-                        if (!Number.isNaN(n)) setChunkSize(n);
-                      }}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="chunk-overlap">{tStep("chunkOverlap")}</Label>
-                    <Input
-                      id="chunk-overlap"
-                      type="number"
-                      value={chunkOverlap}
-                      onChange={(e) => {
-                        const n = parseInt(e.target.value, 10);
-                        if (!Number.isNaN(n)) setChunkOverlap(n);
-                      }}
-                    />
-                  </div>
-                </div>
-              </AccordionContent>
-            </AccordionItem>
-          </Accordion>
-
-          {previewData && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2 text-sm">
-                <span className="truncate font-medium">
-                  {
-                    files.find((f) => f.uploadId === selectedDocumentId)?.file
-                      .name
-                  }
-                </span>
-                <span className="shrink-0 text-muted-foreground">
-                  {tStep("chunksCount", { count: previewData.chunks.length })}
-                </span>
-              </div>
-              <div className="max-h-80 divide-y overflow-y-auto rounded-lg border">
-                {previewData.chunks.map((chunk: PreviewChunk, index: number) => (
-                  <div key={index} className="px-3 py-3">
-                    <p className="mb-1.5 text-xs font-medium text-muted-foreground">
-                      {tStep("chunkLabel", { index: index + 1 })}
-                    </p>
-                    <pre className="whitespace-pre-wrap text-sm leading-relaxed">
-                      {chunk.content}
-                    </pre>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+        <DocumentUploadPreviewPanel
+          documents={uploadedFiles.map((f) => ({
+            uploadId: f.uploadId!,
+            fileName: f.file.name,
+          }))}
+          selectedUploadId={selectedDocumentId}
+          onSelectUploadId={setSelectedDocumentId}
+          chunkSize={chunkSize}
+          chunkOverlap={chunkOverlap}
+          onChunkSizeChange={setChunkSize}
+          onChunkOverlapChange={setChunkOverlap}
+          previewFileName={
+            files.find((f) => f.uploadId === selectedDocumentId)?.file.name
+          }
+          chunks={previewData?.chunks ?? []}
+          labels={{
+            previewHeading: tStep("previewHeading"),
+            selectPlaceholder: tStep("selectDocPlaceholder"),
+            advancedSettings: tStep("advancedSettings"),
+            chunkSize: tStep("chunkSize"),
+            chunkOverlap: tStep("chunkOverlap"),
+            chunksCount: (count) => tStep("chunksCount", { count }),
+            chunkLabel: (index) => tStep("chunkLabel", { index }),
+          }}
+        />
       )}
 
       {currentStep === 3 && (
-        <ul className="max-h-72 divide-y overflow-y-auto rounded-lg border">
-          {pipelineFiles.map((file) => {
-            const task = Object.values(taskStatuses).find(
-              (t) => t.upload_id === file.uploadId
-            );
-            return (
-              <li key={file.uploadId} className="space-y-2 px-3 py-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div className="size-7 shrink-0">
-                      <FileIcon
-                        extension={file.file.name.split(".").pop()}
-                        {...defaultStyles[
-                          file.file.name
-                            .split(".")
-                            .pop() as keyof typeof defaultStyles
-                        ]}
-                      />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">
-                        {file.file.name}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {(file.file.size / 1024 / 1024).toFixed(2)} MB
-                      </p>
-                      {task && (
-                        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                          {(task.status === "pending" ||
-                            task.status === "processing") && (
-                            <Loader2
-                              className="size-3 shrink-0 animate-spin"
-                              aria-hidden
-                            />
-                          )}
-                          {tStep("statusLabel", {
-                            status: formatTaskStatus(task.status),
-                          })}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  {(task?.status === "failed" || file.status === "error") && (
-                    <p
-                      className="max-w-48 shrink-0 truncate text-xs text-destructive"
-                      title={task?.error_message || file.error}
-                    >
-                      {task?.error_message || file.error}
-                    </p>
-                  )}
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+        <DocumentProcessingPipelineList
+          files={pipelineFiles}
+          taskStatuses={effectiveTaskStatuses}
+          resumeTasks={resumeTaskList}
+          formatStatus={formatTaskStatus}
+          progressAriaLabel={tStep("processingProgressAria")}
+        />
       )}
-    </>
+    </div>
   );
 
   if (layout === "dialog") {
     return (
-      <div className="flex min-h-0 flex-1 flex-col">
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-4 pb-4">
+      <>
+        <div className="max-h-[min(60vh,28rem)] overflow-y-auto px-6 py-4">
           {stepContent}
         </div>
-        <DialogFooter className="shrink-0 gap-0 border-t px-6 py-4 sm:gap-0">
-          {footer}
+        <DialogFooter>
+          <div className="w-full border-t px-6 pt-4 pb-6">{footer}</div>
         </DialogFooter>
-      </div>
+      </>
     );
   }
 
   return (
-    <div className="w-full min-w-0 space-y-6">
+    <div className="flex w-full min-w-0 flex-col gap-6">
       {stepContent}
-      <div className="border-t pt-4">{footer}</div>
+      <DialogFooter>{footer}</DialogFooter>
     </div>
   );
 }
