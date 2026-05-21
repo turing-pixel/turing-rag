@@ -1,5 +1,17 @@
 # Troubleshooting Guide
 
+## Frontend: `npm install` fails with `husky: command not found` (recharts)
+
+**Symptom:** Installing with npm (often in `apps/web`) errors under `recharts` with `command sh -c husky` and `husky: command not found`.
+
+**Cause:** Published `recharts` 3.8.0 included a `prepare` script that runs `husky` (meant for the library repo only). That script is not needed for consumers and `husky` is not installed in your tree.
+
+**Fix:**
+
+1. Use the repo workflow: from the **repository root**, run `pnpm install` (this project is a pnpm workspace; npm does not use `pnpm-lock.yaml` correctly here).
+2. This repository applies a **pnpm patch** (`patches/recharts@3.8.0.patch`) that removes the `prepare` field from `recharts@3.8.0` before install, so the bogus script no longer runs.
+3. If you must use npm despite that, use `npm install --ignore-scripts` only as a last resort (skips lifecycle scripts for all packages; can break packages that truly need install scripts).
+
 ## Database Issues
 
 ### 1. Database Tables Not Found
@@ -119,7 +131,7 @@ docker exec ragwebui-backend-1 ping db
 #### Static Files Not Loading
 
 - Check if the frontend container is running
-- Verify nginx configuration
+- Verify frontend can reach the API (default: same host, port 8000)
 - Check console for CORS errors
 
 #### Authentication Problems

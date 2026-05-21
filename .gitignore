@@ -56,11 +56,13 @@ deploy.sh
 *~
 
 # Project specific
-backend/static/
-backend/media/
-frontend/.env
-backend/.env
+apps/api/static/
+apps/api/media/
+apps/web/.env
+apps/api/.env
 chroma_data/
 minio_data/
 *.log
 .claude/
+# Stray Next.js cache if dev was run from repo root; real frontend is apps/web/
+/frontend/

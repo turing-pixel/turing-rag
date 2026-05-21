@@ -1,0 +1,12 @@
+diff --git a/package.json b/package.json
+index 9c21a7b4c8e183e2bc9a2acfd7ef489e4219c858..1da6ee4651d6648d2ffd433886c2f1931b3a13ea 100644
+--- a/package.json
++++ b/package.json
+@@ -24,7 +24,6 @@
+     "react-component"
+   ],
+   "scripts": {
+-    "prepare": "husky",
+     "prebuild": "npm run omnidoc && npm run lint",
+     "build": "npm run build-types && npm run build-cjs && npm run build-es6 && npm run build-umd && npm run test-build-output",
+     "build-cjs": "rimraf lib && cross-env NODE_ENV=commonjs babel ./src -d lib --extensions '.js,.ts,.tsx'",

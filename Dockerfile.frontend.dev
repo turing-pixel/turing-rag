@@ -1,0 +1,24 @@
+# Local / docker-compose dev: monorepo root, Next.js in apps/web.
+FROM node:20-alpine
+
+RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.cloud.tencent.com/g' /etc/apk/repositories
+
+ENV NPM_CONFIG_REGISTRY=https://mirrors.cloud.tencent.com/npm/
+
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+RUN npm install -g pnpm@8
+
+WORKDIR /app
+
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml turbo.json .npmrc ./
+COPY apps/web/package.json ./apps/web/package.json
+COPY packages ./packages
+
+RUN pnpm install --frozen-lockfile
+
+COPY . .
+
+EXPOSE 3000
+
+CMD ["pnpm", "exec", "turbo", "dev", "--filter=@rag-web-ui/web"]

@@ -1,0 +1,23 @@
+@keyframes rag-edge-dash-flow {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: -40;
+  }
+}
+
+.rag-flow-edge-pulse {
+  animation-name: rag-edge-dash-flow;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+.rag-flow-edge-dot {
+  filter: drop-shadow(0 0 3px color-mix(in oklch, var(--primary) 55%, transparent));
+}
+
+.react-flow__edge.selected .rag-flow-edge-pulse {
+  stroke-width: 2.5;
+  opacity: 1;
+}

@@ -1,8 +1,12 @@
-# Production: backend + frontend only.
-# PostgreSQL, MinIO, and Ollama run on the host; Chroma uses persistent mode on a mounted volume.
+# Production: backend + frontend only (this file never builds MinIO or Ollama).
+# Typical VPS layout:
+#   - Ollama: on the host -> backend uses OLLAMA_API_BASE=http://host.docker.internal:11434
+#   - MinIO: separate Docker container with -p 9000:9000 on host -> MINIO_ENDPOINT=host.docker.internal:9000
+#   - PostgreSQL: on the host -> POSTGRES_SERVER=host.docker.internal
+# Chroma: persistent mode on volume ./chroma_data -> /data/chroma
 services:
   backend:
-    build: ./backend
+    build: ./apps/api
     env_file:
       - .env.production
     extra_hosts:
@@ -11,16 +15,18 @@ services:
       - ./uploads:/app/uploads
       - ./chroma_data:/data/chroma
     ports:
-      - "${BACKEND_PORT:-8765}:8000"
+      - "${BACKEND_PORT:-8000}:8000"
     restart: unless-stopped
     networks:
       - app_network
 
   frontend:
     build:
-      context: ./frontend
+      context: .
+      dockerfile: Dockerfile.frontend
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8765}
+        API_BASE_URL: ${API_BASE_URL:-}
+        WEB_BASE_URL: ${WEB_BASE_URL:-}
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
     depends_on:

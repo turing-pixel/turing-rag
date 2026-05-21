@@ -1,0 +1,8 @@
+{
+  "name": "@rag-web-ui/api",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "sh scripts/dev.sh"
+  }
+}

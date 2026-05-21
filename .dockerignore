@@ -1,0 +1,14 @@
+.git
+.claude
+node_modules
+**/.next
+**/node_modules
+*.log
+.env
+.env.*
+apps/api
+apps/api/**
+chroma_data
+minio_data
+uploads
+frontend
