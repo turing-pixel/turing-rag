@@ -105,3 +105,12 @@ class LlmFetchModelsResponse(BaseModel):
 class LlmVerifyResponse(BaseModel):
     success: bool
     message: str
+
+
+class LlmEnvDefaultResponse(BaseModel):
+    configured: bool
+    is_default: bool = False
+    provider: Optional[str] = None
+    model: Optional[str] = None
+    api_base: Optional[str] = None
+    api_key_masked: str = ""

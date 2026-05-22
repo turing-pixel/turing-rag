@@ -17,7 +17,9 @@ export class StreamEmptyResponseError extends Error {
   }
 }
 
-export function parseDataStreamLine(line: string): string | null {
+export function parseDataStreamLine(
+  line: string
+): string | { kind: "data"; data: unknown } | null {
   const trimmed = line.trim();
   if (!trimmed) return null;
 
@@ -30,6 +32,15 @@ export function parseDataStreamLine(line: string): string | null {
   if (code === "0") {
     try {
       return JSON.parse(payload) as string;
+    } catch {
+      return null;
+    }
+  }
+
+  if (code === "2") {
+    try {
+      const data = JSON.parse(payload) as unknown;
+      return { kind: "data", data };
     } catch {
       return null;
     }
@@ -48,11 +59,17 @@ export function parseDataStreamLine(line: string): string | null {
   return null;
 }
 
+export type DataStreamPart =
+  | { kind: "text"; text: string }
+  | { kind: "data"; data: unknown };
+
 export interface ReadDataStreamOptions {
   /** Abort read when no bytes arrive for this long (ms). Default 120s. Set 0 to disable. */
   idleTimeoutMs?: number;
   /** When true (default), throw if the stream closes without any text chunk. */
   requireText?: boolean;
+  /** Called for each Vercel AI data stream type `2` payload (JSON array). */
+  onData?: (items: unknown[]) => void | Promise<void>;
 }
 
 const DEFAULT_IDLE_TIMEOUT_MS = 120_000;
@@ -77,6 +94,24 @@ function readWithIdleTimeout<T>(
   return Promise.race([promise, timeoutPromise]).finally(() => {
     if (timer) clearTimeout(timer);
   });
+}
+
+async function dispatchStreamPart(
+  part: string | { kind: "data"; data: unknown } | null,
+  onText: (chunk: string) => void,
+  onData?: (items: unknown[]) => void | Promise<void>
+): Promise<boolean> {
+  if (!part) return false;
+  if (typeof part === "string") {
+    onText(part);
+    return true;
+  }
+  if (part.kind === "data" && onData) {
+    const items = Array.isArray(part.data) ? part.data : [part.data];
+    await Promise.resolve(onData(items));
+    return true;
+  }
+  return false;
 }
 
 export async function readDataStream(
@@ -107,19 +142,23 @@ export async function readDataStream(
       buffer = lines.pop() ?? "";
 
       for (const line of lines) {
-        const text = parseDataStreamLine(line);
-        if (text) {
+        const part = parseDataStreamLine(line);
+        if (
+          (await dispatchStreamPart(part, onText, options.onData))
+          && typeof part === "string"
+        ) {
           receivedText = true;
-          onText(text);
         }
       }
     }
 
     if (buffer.trim()) {
-      const text = parseDataStreamLine(buffer);
-      if (text) {
+      const part = parseDataStreamLine(buffer);
+      if (
+        (await dispatchStreamPart(part, onText, options.onData))
+        && typeof part === "string"
+      ) {
         receivedText = true;
-        onText(text);
       }
     }
   } finally {

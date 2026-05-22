@@ -23,6 +23,7 @@ const SEGMENT_KEYS = [
   "upload",
   "api-keys",
   "llm-configs",
+  "embedding-configs",
   "test-retrieval",
   "rag",
 ] as const;
@@ -39,6 +40,7 @@ const DASHBOARD_SECTION_KEYS = new Set<SegmentKey>([
   "rag",
   "api-keys",
   "llm-configs",
+  "embedding-configs",
   "test-retrieval",
 ]);
 

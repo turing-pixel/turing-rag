@@ -14,7 +14,6 @@ import {
 } from "lucide-react";
 
 import { Link } from "@/i18n/navigation";
-import DashboardLayout from "@/components/layout/dashboard-layout";
 import { DashboardPageContainer } from "@/components/layout/dashboard-page-container";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -50,7 +49,7 @@ const quickActions = [
     descKey: "actionUploadDesc" as const,
   },
   {
-    href: "/dashboard/chat/new",
+    href: "/dashboard/chat",
     icon: Sparkles,
     titleKey: "actionChat" as const,
     descKey: "actionChatDesc" as const,
@@ -71,7 +70,7 @@ const steps = [
     linkKey: "step2Link" as const,
   },
   {
-    href: "/dashboard/chat/new",
+    href: "/dashboard/chat",
     titleKey: "step3Title" as const,
     bodyKey: "step3Body" as const,
     linkKey: "step3Link" as const,
@@ -110,8 +109,7 @@ export default function DashboardPage() {
   }, [loadStats]);
 
   return (
-    <DashboardLayout>
-      <DashboardPageContainer className="space-y-8">
+    <DashboardPageContainer className="space-y-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1">
             <h1 className="text-2xl font-semibold tracking-tight">
@@ -269,7 +267,6 @@ export default function DashboardPage() {
             ))}
           </ol>
         </section>
-      </DashboardPageContainer>
-    </DashboardLayout>
+    </DashboardPageContainer>
   );
 }

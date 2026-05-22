@@ -9,7 +9,7 @@ from langchain_ollama import OllamaEmbeddings
 
 logger = logging.getLogger(__name__)
 
-# Supported Ollama embedding models (set OLLAMA_EMBEDDINGS_MODEL in .env).
+# Supported Ollama embedding models (set EMBEDDINGS_MODEL when EMBEDDINGS_PROVIDER=ollama).
 OLLAMA_EMBEDDING_MODELS: Dict[str, Dict[str, object]] = {
     "bge-m3": {
         "dimensions": 1024,
@@ -38,14 +38,14 @@ def validate_ollama_embedding_model(model: str) -> Optional[str]:
     if base not in OLLAMA_EMBEDDING_MODELS:
         known = ", ".join(sorted(OLLAMA_EMBEDDING_MODELS))
         return (
-            f"OLLAMA_EMBEDDINGS_MODEL '{model}' is not a documented model. "
+            f"EMBEDDINGS_MODEL '{model}' is not a documented Ollama embedding model. "
             f"Recommended: {known}. Ensure you ran the matching `ollama pull`."
         )
     return None
 
 
 def format_ollama_embedding_models_help() -> str:
-    lines = ["Supported Ollama embedding models (OLLAMA_EMBEDDINGS_MODEL):"]
+    lines = ["Supported Ollama embedding models (EMBEDDINGS_MODEL):"]
     for name, meta in OLLAMA_EMBEDDING_MODELS.items():
         lines.append(
             f"  - {name}: {meta['dimensions']} dims, {meta['description']} "

@@ -103,7 +103,8 @@ export interface AssistantStreamStatus {
 /** Infer retrieval vs generation phase from raw streamed assistant content. */
 export function getAssistantStreamStatus(
   rawContent: string,
-  isLoading: boolean
+  isLoading: boolean,
+  retrievalCitationCount?: number | null
 ): AssistantStreamStatus | null {
   if (!isLoading) return null;
 
@@ -112,14 +113,14 @@ export function getAssistantStreamStatus(
     return { phase: "retrieving", citationCount: null };
   }
 
-  const [base64Part, answerPart] = trimmed.split(LLM_RESPONSE_SEPARATOR);
-  let citationCount: number | null = null;
-  try {
-    if (base64Part) {
+  const [base64Part] = trimmed.split(LLM_RESPONSE_SEPARATOR);
+  let citationCount: number | null = retrievalCitationCount ?? null;
+  if (citationCount == null && base64Part) {
+    try {
       citationCount = parseContextPayload(base64Part).length;
+    } catch {
+      citationCount = null;
     }
-  } catch {
-    citationCount = null;
   }
 
   return {
@@ -156,14 +157,21 @@ export function formatChatHistoryMessages(
     id: number;
     content: string;
     role: "assistant" | "user";
+    feedback?: string | null;
   }>
 ) {
   return messages.map((msg) => {
+    const feedback =
+      msg.feedback === "like" || msg.feedback === "dislike"
+        ? msg.feedback
+        : null;
+
     if (msg.role !== "assistant") {
       return {
         id: msg.id.toString(),
         role: msg.role,
         content: msg.content,
+        feedback,
       };
     }
 
@@ -173,6 +181,7 @@ export function formatChatHistoryMessages(
       role: "assistant" as "assistant",
       content: parsed.content,
       citations: parsed.citations,
+      feedback,
     };
   });
 }

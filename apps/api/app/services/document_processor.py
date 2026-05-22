@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import hashlib
@@ -21,7 +22,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.minio import get_minio_client
-from app.models.knowledge import ProcessingTask, Document, DocumentChunk
+from app.models.knowledge import KnowledgeBase, ProcessingTask, Document, DocumentChunk
 from app.services.chunk_record import ChunkRecord
 import uuid
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -29,16 +30,41 @@ from langchain_community.document_loaders import UnstructuredFileLoader
 from minio.error import MinioException
 from minio import Minio
 from app.services.vector_store import VectorStoreFactory
-from app.services.embedding.embedding_factory import EmbeddingsFactory
+from app.services.embedding.embedding_config_service import create_user_embeddings
 from app.services.vector_store.base import BaseVectorStore
 
+
+def _embeddings_for_kb(db: Session, kb_id: int):
+    kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
+    if not kb:
+        from app.services.embedding.embedding_factory import EmbeddingsFactory
+
+        return EmbeddingsFactory.create()
+    return create_user_embeddings(db, kb.user_id)
+
 EMBED_BATCH_SIZE = 64
-CHUNK_PROGRESS_COMMIT_EVERY = 50
+CHUNK_PROGRESS_COMMIT_EVERY = 10
+
+# Run sync processing off the event loop so GET /documents/tasks stays fast.
+# Local Chroma HTTP (chroma run) often returns 502 under concurrent identity checks.
+def _document_processing_concurrency() -> int:
+    raw = os.getenv("DOCUMENT_PROCESSING_CONCURRENCY", "").strip()
+    if raw.isdigit():
+        return max(1, int(raw))
+    if settings.VECTOR_STORE_TYPE.lower().strip() == "chroma":
+        return 1
+    return 2
+
+
+_DOCUMENT_PROCESSING_SEMAPHORE = asyncio.Semaphore(_document_processing_concurrency())
 
 # Progress bands (monotonic 0-100)
 _PROGRESS_RESOLVE = 5
+_PROGRESS_READ = 10
 _PROGRESS_LOAD = 15
 _PROGRESS_SPLIT = 25
+_PROGRESS_VECTOR = 28
+_PROGRESS_PREPARE = 29
 _PROGRESS_STORE_START = 30
 _PROGRESS_STORE_END = 55
 _PROGRESS_EMBED_START = 55
@@ -54,16 +80,25 @@ def _update_task_progress(
     *,
     commit: bool = True,
 ) -> None:
-    """Update task progress; only increases (monotonic)."""
+    """Update task progress; percent is monotonic, message may refresh at the same stage."""
     progress = max(0, min(100, progress))
     current = task.progress or 0
-    if progress < current and task.status == "processing":
+    if progress < current and task.status == "processing" and message is None:
         return
     task.progress = max(current, progress)
     if message is not None:
         task.progress_message = message
     if commit:
         db.commit()
+
+
+def _fail_processing_task(
+    task: ProcessingTask, db: Session, error: Exception, stage: str
+) -> None:
+    task.status = "failed"
+    task.error_message = str(error)
+    task.progress_message = stage
+    db.commit()
 
 
 def _permanent_minio_path(kb_id: int, file_name: str) -> str:
@@ -165,6 +200,67 @@ def _clear_document_chunks_and_vectors(
         f"Task {task_id}: Cleared {len(chunk_ids)} existing chunks for document {document.id}"
     )
 
+
+class DocumentDeleteError(Exception):
+    def __init__(self, message: str, status_code: int = 400):
+        super().__init__(message)
+        self.message = message
+        self.status_code = status_code
+
+
+def delete_knowledge_base_document(
+    db: Session,
+    document: Document,
+    kb_id: int,
+) -> dict:
+    """Delete a document and its vectors, chunks, tasks, and MinIO object."""
+    logger = logging.getLogger(__name__)
+
+    active_task = (
+        db.query(ProcessingTask)
+        .filter(
+            ProcessingTask.document_id == document.id,
+            ProcessingTask.status.in_(("pending", "processing")),
+        )
+        .first()
+    )
+    if active_task:
+        raise DocumentDeleteError("Document is still being processed", 409)
+
+    embeddings = _embeddings_for_kb(db, kb_id)
+    vector_store = VectorStoreFactory.create(
+        store_type=settings.VECTOR_STORE_TYPE,
+        collection_name=f"kb_{kb_id}",
+        embedding_function=embeddings,
+    )
+    _clear_document_chunks_and_vectors(db, document, vector_store, 0, logger)
+
+    warnings: list[str] = []
+    try:
+        minio_client = get_minio_client()
+        minio_client.remove_object(settings.MINIO_BUCKET_NAME, document.file_path)
+        logger.info(
+            "Removed MinIO object for document %s: %s",
+            document.id,
+            document.file_path,
+        )
+    except MinioException as exc:
+        msg = f"Failed to remove file from storage: {exc}"
+        warnings.append(msg)
+        logger.warning(msg)
+
+    db.query(ProcessingTask).filter(
+        ProcessingTask.document_id == document.id
+    ).delete(synchronize_session=False)
+    db.delete(document)
+    db.commit()
+
+    payload: dict = {"message": "Document deleted successfully"}
+    if warnings:
+        payload["warnings"] = warnings
+    return payload
+
+
 class UploadResult(BaseModel):
     file_path: str
     file_name: str
@@ -187,10 +283,13 @@ async def process_document(file_path: str, file_name: str, kb_id: int, document_
     try:
         preview_result = await preview_document(file_path, chunk_size, chunk_overlap)
         
-        # Initialize embeddings
-        logger.info("Initializing OpenAI embeddings...")
-        embeddings = EmbeddingsFactory.create()
-        
+        logger.info("Initializing embeddings for knowledge base %s", kb_id)
+        db = SessionLocal()
+        try:
+            embeddings = _embeddings_for_kb(db, kb_id)
+        finally:
+            db.close()
+
         logger.info(f"Initializing vector store with collection: kb_{kb_id}")
         vector_store = VectorStoreFactory.create(
             store_type=settings.VECTOR_STORE_TYPE,
@@ -371,16 +470,16 @@ async def preview_document(file_path: str, chunk_size: int = 1000, chunk_overlap
         if should_cleanup and os.path.exists(temp_path):
             os.unlink(temp_path)
 
-async def process_document_background(
+def _process_document_in_worker(
     temp_path: str,
     file_name: str,
     kb_id: int,
     task_id: int,
     db: Session = None,
     chunk_size: int = 1000,
-    chunk_overlap: int = 200
+    chunk_overlap: int = 200,
 ) -> None:
-    """Process document in background"""
+    """Sync document pipeline; must run in a thread pool, not on the asyncio loop."""
     logger = logging.getLogger(__name__)
     logger.info(f"Starting background processing for task {task_id}, file: {file_name}")
 
@@ -417,10 +516,10 @@ async def process_document_background(
             _, ext = os.path.splitext(file_name)
             ext = ext.lower()
 
-            _update_task_progress(
-                task, db, _PROGRESS_LOAD, "Loading document", commit=True
-            )
             logger.info(f"Task {task_id}: Loading document with extension {ext}")
+            _update_task_progress(
+                task, db, _PROGRESS_READ, "Reading document", commit=True
+            )
             # 选择合适的加载器
             if ext == ".pdf":
                 loader = PyPDFLoader(local_temp_path)
@@ -433,6 +532,9 @@ async def process_document_background(
 
             logger.info(f"Task {task_id}: Loading document content")
             documents = loader.load()
+            _update_task_progress(
+                task, db, _PROGRESS_LOAD, "Document loaded", commit=True
+            )
             logger.info(f"Task {task_id}: Document loaded successfully")
 
             _update_task_progress(
@@ -449,13 +551,18 @@ async def process_document_background(
 
             # 3. 创建向量存储
             logger.info(f"Task {task_id}: Initializing vector store")
-            embeddings = EmbeddingsFactory.create()
-
-            vector_store = VectorStoreFactory.create(
-                store_type=settings.VECTOR_STORE_TYPE,
-                collection_name=f"kb_{kb_id}",
-                embedding_function=embeddings,
+            _update_task_progress(
+                task, db, _PROGRESS_VECTOR, "Connecting to vector index", commit=True
             )
+            embeddings = _embeddings_for_kb(db, kb_id)
+            try:
+                vector_store = VectorStoreFactory.create(
+                    store_type=settings.VECTOR_STORE_TYPE,
+                    collection_name=f"kb_{kb_id}",
+                    embedding_function=embeddings,
+                )
+            except Exception as e:
+                raise RuntimeError(f"Vector store initialization failed: {e}") from e
 
             permanent_path = _permanent_minio_path(kb_id, file_name)
             existing_document = (
@@ -473,11 +580,17 @@ async def process_document_background(
                 logger.info(
                     f"Task {task_id}: Reusing document record ID {document.id}, re-embedding"
                 )
+                _update_task_progress(
+                    task, db, _PROGRESS_PREPARE, "Clearing old embeddings", commit=True
+                )
                 _clear_document_chunks_and_vectors(
                     db, document, vector_store, task_id, logger
                 )
             else:
                 try:
+                    _update_task_progress(
+                        task, db, _PROGRESS_PREPARE, "Saving file", commit=True
+                    )
                     logger.info(f"Task {task_id}: Uploading file to permanent MinIO storage")
                     with open(local_temp_path, "rb") as f:
                         file_content = f.read()
@@ -516,6 +629,9 @@ async def process_document_background(
 
             # 6. 存储文档块
             logger.info(f"Task {task_id}: Storing document chunks")
+            _update_task_progress(
+                task, db, _PROGRESS_STORE_START, "Saving chunks", commit=True
+            )
             store_span = _PROGRESS_STORE_END - _PROGRESS_STORE_START
             for i, chunk in enumerate(chunks):
                 # 为每个 chunk 生成唯一的 ID
@@ -565,6 +681,9 @@ async def process_document_background(
 
             # 7. 添加到向量存储（分批以报告进度）
             logger.info(f"Task {task_id}: Adding chunks to vector store")
+            _update_task_progress(
+                task, db, _PROGRESS_EMBED_START, "Embedding", commit=True
+            )
             embed_span = _PROGRESS_EMBED_END - _PROGRESS_EMBED_START
             if total_chunks == 0:
                 _update_task_progress(
@@ -616,19 +735,95 @@ async def process_document_background(
     except Exception as e:
         logger.error(f"Task {task_id}: Error processing document: {str(e)}")
         logger.error(f"Task {task_id}: Stack trace: {traceback.format_exc()}")
-        task.status = "failed"
-        task.error_message = str(e)
-        db.commit()
+        stage = task.progress_message or "Processing failed"
+        if (task.progress or 0) <= _PROGRESS_VECTOR and "vector" in str(e).lower():
+            stage = "Vector index connection failed"
+        elif (task.progress or 0) >= _PROGRESS_EMBED_START:
+            stage = "Embedding failed"
+        _fail_processing_task(task, db, e, stage)
     finally:
         # if we create the db session, we need to close it
         if should_close_db and db:
             db.close()
 
 
+async def process_document_background(
+    temp_path: str,
+    file_name: str,
+    kb_id: int,
+    task_id: int,
+    db: Session = None,
+    chunk_size: int = 1000,
+    chunk_overlap: int = 200,
+) -> None:
+    """Process document without blocking HTTP handlers (poll /tasks)."""
+    async with _DOCUMENT_PROCESSING_SEMAPHORE:
+        await asyncio.to_thread(
+            _process_document_in_worker,
+            temp_path,
+            file_name,
+            kb_id,
+            task_id,
+            db,
+            chunk_size,
+            chunk_overlap,
+        )
+
+
+def queue_document_reprocess(
+    db: Session,
+    kb_id: int,
+    document_id: int,
+) -> dict:
+    """
+    Re-embed an existing document from MinIO permanent storage.
+    Clears old chunks/vectors and rebuilds with the current embedding config.
+    """
+    document = (
+        db.query(Document)
+        .filter(
+            Document.id == document_id,
+            Document.knowledge_base_id == kb_id,
+        )
+        .first()
+    )
+    if not document:
+        raise DocumentDeleteError("Document not found", 404)
+
+    active_task = (
+        db.query(ProcessingTask)
+        .filter(
+            ProcessingTask.document_id == document.id,
+            ProcessingTask.status.in_(("pending", "processing")),
+        )
+        .first()
+    )
+    if active_task:
+        raise DocumentDeleteError("Document is already being processed", 409)
+
+    task = ProcessingTask(
+        document_id=document.id,
+        knowledge_base_id=kb_id,
+        status="pending",
+        progress=0,
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+
+    asyncio.create_task(
+        process_document_background(
+            document.file_path,
+            document.file_name,
+            kb_id,
+            task.id,
+        )
+    )
+    return {"task_id": task.id, "document_id": document.id}
+
+
 async def queue_retry_failed_processing_tasks(kb_id: int) -> dict:
     """Re-queue failed tasks (e.g. after Ollama was fixed). Uses MinIO permanent paths."""
-    import asyncio
-
     logger = logging.getLogger(__name__)
     db = SessionLocal()
     queued = 0

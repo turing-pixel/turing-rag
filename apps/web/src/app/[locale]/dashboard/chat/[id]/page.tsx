@@ -1,27 +1,45 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, use, useCallback } from "react";
-import { Link, useRouter } from "@/i18n/navigation";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { Link } from "@/i18n/navigation";
+import { useChatHistory } from "@/components/chat/chat-history-context";
 import { useChat, type ChatMessage as UIChatMessage } from "@/hooks/use-chat";
 import { useChatScroll } from "@/hooks/use-chat-scroll";
-import { useTranslations } from "next-intl";
-import { ArrowLeft, ArrowUp, Library, Square } from "lucide-react";
-import Image from "next/image";
+import { useLocale, useTranslations } from "next-intl";
+import { ArrowUp, Library, Square } from "lucide-react";
 import { toast } from "sonner";
-import DashboardLayout from "@/components/layout/dashboard-layout";
 import { api, ApiError, getAuthHeaders } from "@/lib/api";
 import { getApiBase } from "@/lib/public-urls";
 import {
   formatChatHistoryMessages,
-  getAssistantStreamStatus,
+  isContextPrefixOnly,
   parseAssistantMessage,
 } from "@/lib/chat-message";
+import {
+  applyKnowledgeBasesFromQuery,
+  loadChatById,
+  parseKbIdsFromSearchParams,
+  updateWorkspaceKnowledgeBases,
+} from "@/lib/chat-session";
+import {
+  INITIAL_RETRIEVAL_STREAM_STATE,
+  retrievalStreamToCitations,
+} from "@/lib/chat-retrieval-stream";
 import { Answer } from "@/components/chat/answer";
+import { ChatMessageBlock } from "@/components/chat/chat-message-actions";
+import { ChatMessageEditDialog } from "@/components/chat/chat-message-edit-dialog";
+import { patchChatMessage } from "@/lib/chat-api";
+import {
+  KnowledgeBasePicker,
+  type KnowledgeBaseOption,
+} from "@/components/chat/knowledge-base-picker";
+import { RetrievalStatusPanel } from "@/components/chat/retrieval-status-panel";
 import { ModelSelector } from "@/components/chat/model-selector";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
+  EmptyContent,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
@@ -39,55 +57,53 @@ import {
   InputGroupButton,
   InputGroupTextarea,
 } from "@/components/ui/input-group";
-import { Spinner } from "@/components/ui/spinner";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { chatIndexPath, parseRouteChatId } from "@/lib/chat-paths";
 import { ChatConversationSkeleton } from "@/components/skeletons/chat-conversation-skeleton";
 
-interface ChatMessage {
-  id: number;
-  content: string;
-  role: "assistant" | "user";
-  created_at: string;
-}
-
-interface Chat {
-  id: number;
-  title: string;
-  messages: ChatMessage[];
-  knowledge_base_ids: number[];
-  llm_config_id?: number | null;
-  llm_provider?: string | null;
-  llm_model?: string | null;
-}
-
-interface LinkedKnowledgeBase {
-  id: number;
-  name: string;
-}
-
-export default function ChatPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id } = use(params);
+function ChatPageContent() {
   const router = useRouter();
+  const params = useParams();
+  const searchParams = useSearchParams();
   const t = useTranslations("chatPage");
+  const locale = useLocale();
+  const { refreshChats } = useChatHistory();
+
+  const routeChatId = useMemo(
+    () => parseRouteChatId(params.id),
+    [params.id]
+  );
   const formRef = useRef<HTMLFormElement>(null);
-  const {
-    scrollRef: messagesScrollRef,
-    contentRef: messagesContentRef,
-    followContent,
-    pinAndScrollToBottom,
-    markSkipNextFollow,
-  } = useChatScroll({ throttleMs: 100, scrollDebounceMs: 150 });
-  const [chatTitle, setChatTitle] = useState("");
-  const [linkedKbs, setLinkedKbs] = useState<LinkedKnowledgeBase[]>([]);
+  const kbPatchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [chatId, setChatId] = useState<string | null>(null);
+  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBaseOption[]>(
+    []
+  );
+  const [selectedKbIds, setSelectedKbIds] = useState<number[]>([]);
   const [isPageLoading, setIsPageLoading] = useState(true);
+  const [isUpdatingKbs, setIsUpdatingKbs] = useState(false);
   const [modelProviders, setModelProviders] = useState<
     LlmModelsResponse["providers"]
   >([]);
   const [selectedModel, setSelectedModel] = useState<LlmSelection | null>(null);
   const [isUpdatingModel, setIsUpdatingModel] = useState(false);
+  const [editTarget, setEditTarget] = useState<{
+    id: string;
+    content: string;
+  } | null>(null);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+
+  const messagesApi =
+    chatId != null ? `${getApiBase()}/api/chat/${chatId}/messages` : "";
+
+  const {
+    scrollRef: messagesScrollRef,
+    contentRef: messagesContentRef,
+    followContent,
+    pinAndScrollToBottom,
+    scrollToBottomAfterLayout,
+  } = useChatScroll({ throttleMs: 100, scrollDebounceMs: 150 });
 
   const {
     messages,
@@ -98,97 +114,151 @@ export default function ChatPage({
     isLoading,
     error,
     setMessages,
+    retrievalStream,
+    setRetrievalStream,
+    regenerateMessage,
+    regenerateAfterUserEdit,
+    setMessageFeedback,
   } = useChat({
-    api: `${getApiBase()}/api/chat/${id}/messages`,
+    api: messagesApi || `${getApiBase()}/api/chat/0/messages`,
+    chatId,
     headers: getAuthHeaders(),
     streamEmptyMessage: t("streamEmpty"),
     streamTimeoutMessage: t("streamTimeout"),
+    onStreamComplete: () => {
+      void refreshChats();
+    },
   });
 
-  const fetchChat = useCallback(async () => {
-    setIsPageLoading(true);
+  const persistKnowledgeBases = useCallback(
+    async (ids: number[]) => {
+      if (chatId == null) return;
+      setIsUpdatingKbs(true);
+      try {
+        await updateWorkspaceKnowledgeBases(chatId, ids);
+      } catch (err) {
+        const message =
+          err instanceof ApiError ? err.message : t("kbsUpdateFailed");
+        toast.error(message);
+        throw err;
+      } finally {
+        setIsUpdatingKbs(false);
+      }
+    },
+    [chatId, t]
+  );
 
-    let data: Chat;
-    try {
-      data = (await api.get(`/api/chat/${id}`)) as Chat;
-    } catch (error) {
-      console.error("Failed to fetch chat:", error);
-      const message =
-        error instanceof ApiError ? error.message : t("loadChatFailed");
-      toast.error(message);
-      router.push("/dashboard/chat");
-      setIsPageLoading(false);
+  const handleKbSelectionChange = useCallback(
+    (ids: number[]) => {
+      setSelectedKbIds(ids);
+      if (chatId == null) return;
+      if (kbPatchRef.current) clearTimeout(kbPatchRef.current);
+      kbPatchRef.current = setTimeout(() => {
+        void persistKnowledgeBases(ids);
+      }, 400);
+    },
+    [chatId, persistKnowledgeBases]
+  );
+
+  const initChat = useCallback(
+    async (targetChatId: string) => {
+      setIsPageLoading(true);
+      stop();
+      setMessages([]);
+      setRetrievalStream(INITIAL_RETRIEVAL_STREAM_STATE);
+
+      try {
+        const [chat, kbs, models] = await Promise.all([
+          loadChatById(targetChatId),
+          api.get("/api/knowledge-base") as Promise<KnowledgeBaseOption[]>,
+          api.get("/api/chat/models") as Promise<LlmModelsResponse>,
+        ]);
+
+        setKnowledgeBases(kbs);
+        setModelProviders(models.providers);
+        setChatId(chat.id);
+        setMessages(
+          formatChatHistoryMessages(chat.messages) as UIChatMessage[]
+        );
+
+        const queryKbIds = parseKbIdsFromSearchParams(searchParams);
+        let kbIds = chat.knowledge_base_ids ?? [];
+        if (queryKbIds.length > 0) {
+          const valid = queryKbIds.filter((id) =>
+            kbs.some((kb) => kb.id === id)
+          );
+          if (valid.length > 0) {
+            kbIds = valid;
+            await applyKnowledgeBasesFromQuery(chat.id, valid);
+          }
+        }
+        setSelectedKbIds(kbIds);
+
+        if (chat.llm_config_id != null) {
+          setSelectedModel(
+            selectionFromProviders(models.providers, {
+              configId: chat.llm_config_id,
+              provider: chat.llm_provider ?? "",
+              model: chat.llm_model ?? "",
+            })
+          );
+        } else if (chat.llm_provider && chat.llm_model) {
+          setSelectedModel({
+            provider: chat.llm_provider,
+            model: chat.llm_model,
+          });
+        } else {
+          setSelectedModel(getDefaultSelection(models));
+        }
+      } catch (err) {
+        console.error("Failed to init chat:", err);
+        const message =
+          err instanceof ApiError ? err.message : t("loadChatFailed");
+        toast.error(message);
+      } finally {
+        setIsPageLoading(false);
+      }
+    },
+    [searchParams, setMessages, setRetrievalStream, stop, t]
+  );
+
+  useEffect(() => {
+    const rawId = Array.isArray(params.id) ? params.id[0] : params.id;
+    if (rawId === "new") {
+      router.replace(chatIndexPath(searchParams));
       return;
     }
-
-    setChatTitle(data.title);
-    setMessages(formatChatHistoryMessages(data.messages) as UIChatMessage[]);
-    markSkipNextFollow();
-
-    const [modelsResult, kbsResult] = await Promise.allSettled([
-      api.get("/api/chat/models") as Promise<LlmModelsResponse>,
-      api.get("/api/knowledge-base") as Promise<
-        Array<{ id: number; name: string }>
-      >,
-    ]);
-
-    if (modelsResult.status === "fulfilled") {
-      const modelsData = modelsResult.value;
-      setModelProviders(modelsData.providers);
-      if (data.llm_config_id != null) {
-        setSelectedModel(
-          selectionFromProviders(modelsData.providers, {
-            configId: data.llm_config_id,
-            provider: data.llm_provider ?? "",
-            model: data.llm_model ?? "",
-          })
-        );
-      } else if (data.llm_provider && data.llm_model) {
-        setSelectedModel({
-          provider: data.llm_provider,
-          model: data.llm_model,
-        });
-      } else {
-        setSelectedModel(getDefaultSelection(modelsData));
-      }
-    } else {
-      console.error("Failed to fetch chat models:", modelsResult.reason);
-      const message =
-        modelsResult.reason instanceof ApiError
-          ? modelsResult.reason.message
-          : t("modelsLoadFailed");
-      toast.error(message);
+    if (routeChatId == null) {
+      router.replace(chatIndexPath(searchParams));
+      return;
     }
+    void initChat(routeChatId);
+    return () => {
+      if (kbPatchRef.current) clearTimeout(kbPatchRef.current);
+    };
+  }, [routeChatId, initChat, router, searchParams]);
 
-    if (kbsResult.status === "fulfilled") {
-      setLinkedKbs(
-        kbsResult.value
-          .filter((kb) => data.knowledge_base_ids?.includes(kb.id))
-          .map((kb) => ({ id: kb.id, name: kb.name }))
-      );
-    } else {
-      console.error("Failed to fetch knowledge bases:", kbsResult.reason);
-      toast.error(t("kbsLoadFailed"));
-    }
-
-    setIsPageLoading(false);
-  }, [id, markSkipNextFollow, router, setMessages, t]);
+  useEffect(() => {
+    if (isPageLoading || messages.length === 0) return;
+    scrollToBottomAfterLayout("auto");
+  }, [isPageLoading, messages.length, scrollToBottomAfterLayout]);
 
   const handleModelChange = async (nextModel: LlmSelection) => {
+    if (chatId == null) return;
     const previousModel = selectedModel;
     setSelectedModel(nextModel);
     setIsUpdatingModel(true);
     try {
-      await api.patch(`/api/chat/${id}`, {
-        llm_config_id: nextModel.configId ?? undefined,
-        llm_provider: nextModel.configId ? undefined : nextModel.provider,
-        llm_model: nextModel.configId ? undefined : nextModel.model,
+      await api.patch(`/api/chat/${chatId}`, {
+        llm_config_id: nextModel.configId ?? null,
+        llm_provider: nextModel.configId ? null : nextModel.provider,
+        llm_model: nextModel.configId ? null : nextModel.model,
       });
       toast.success(t("modelUpdated"));
-    } catch (error) {
+    } catch (err) {
       setSelectedModel(previousModel);
-      if (error instanceof ApiError) {
-        toast.error(error.message);
+      if (err instanceof ApiError) {
+        toast.error(err.message);
       } else {
         toast.error(t("modelUpdateFailed"));
       }
@@ -198,16 +268,25 @@ export default function ChatPage({
   };
 
   useEffect(() => {
-    void fetchChat();
-  }, [fetchChat]);
-
-  useEffect(() => {
     if (!error) return;
     toast.error(t("sendFailed"), { description: error });
   }, [error, t]);
 
+  const linkedKbs = useMemo(
+    () => knowledgeBases.filter((kb) => selectedKbIds.includes(kb.id)),
+    [knowledgeBases, selectedKbIds]
+  );
+
+  const streamCitations = useMemo(
+    () => retrievalStreamToCitations(retrievalStream),
+    [retrievalStream]
+  );
+
   const processedMessages = useMemo(() => {
-    return messages.map((message) => {
+    const streamCitationsForUi =
+      streamCitations.length > 0 ? streamCitations : undefined;
+
+    return messages.map((message, index) => {
       if (message.role !== "assistant") return message;
       if (!message.content) return message;
 
@@ -215,60 +294,138 @@ export default function ChatPage({
         return message;
       }
 
+      const isStreamingLast = isLoading && index === messages.length - 1;
+
+      if (isStreamingLast) {
+        const hasSeparator = message.content.includes("__LLM_RESPONSE__");
+        if (!hasSeparator) {
+          if (isContextPrefixOnly(message.content)) {
+            return { ...message, content: "" };
+          }
+          return message;
+        }
+        const parsed = parseAssistantMessage(message.content);
+        return {
+          ...message,
+          content: parsed.content,
+          citations: parsed.citations ?? streamCitationsForUi,
+        };
+      }
+
       const parsed = parseAssistantMessage(message.content);
+      const isLast = index === messages.length - 1;
       return {
         ...message,
         content: parsed.content,
-        citations: parsed.citations ?? message.citations,
+        citations:
+          parsed.citations ??
+          message.citations ??
+          (isLast ? streamCitationsForUi : undefined),
       };
     });
+  }, [messages, isLoading, streamCitations]);
+
+  const assistantAnswerState = useMemo(() => {
+    const last = messages.at(-1);
+    if (last?.role !== "assistant") {
+      return { started: false, finished: false };
+    }
+    const hasSeparator = last.content.includes("__LLM_RESPONSE__");
+    const parsed = parseAssistantMessage(last.content);
+    const hasVisibleAnswer = parsed.content.trim().length > 0;
+    return {
+      started: hasSeparator,
+      finished: hasSeparator || hasVisibleAnswer,
+    };
   }, [messages]);
 
-  const streamStatus = useMemo(() => {
-    if (!isLoading) return null;
-    const last = messages.at(-1);
-    const raw =
-      last?.role === "assistant" ? last.content : "";
-    return getAssistantStreamStatus(raw, true);
-  }, [isLoading, messages]);
+  const answerStreamStarted = isLoading && assistantAnswerState.started;
+  const answerFinished = !isLoading && assistantAnswerState.finished;
 
-  const showStreamStatus = useMemo(() => {
-    if (!streamStatus) return false;
-    const last = processedMessages.at(-1);
-    return last?.role !== "assistant" || !last.content;
-  }, [streamStatus, processedMessages]);
+  const hasRetrievalStream = retrievalStream.phase != null;
 
-  const streamStatusLabel = useMemo(() => {
-    if (!streamStatus) return "";
-    if (streamStatus.phase === "retrieving") {
-      return t("retrieving");
+  const hasRetrievalSources = retrievalStream.documents.length > 0;
+  const lastMessageIsAssistant =
+    processedMessages.at(-1)?.role === "assistant";
+
+  const showRetrievalPanel = useMemo(() => {
+    if (isLoading) {
+      if (hasRetrievalStream) return true;
+      if (answerStreamStarted) return true;
+      const last = processedMessages.at(-1);
+      return last?.role !== "assistant" || !last.content;
     }
-    if (streamStatus.citationCount != null) {
-      return t("generatingWithSources", {
-        count: streamStatus.citationCount,
-      });
+    return hasRetrievalSources && lastMessageIsAssistant;
+  }, [
+    isLoading,
+    hasRetrievalStream,
+    hasRetrievalSources,
+    lastMessageIsAssistant,
+    answerStreamStarted,
+    processedMessages,
+  ]);
+
+  const linkedKbNamesLabel = useMemo(() => {
+    if (linkedKbs.length === 0) return null;
+    if (linkedKbs.length === 1) {
+      const name = linkedKbs[0].name;
+      return locale.startsWith("zh") ? `「${name}」` : name;
     }
-    return t("generating");
-  }, [streamStatus, t]);
+    const separator = locale.startsWith("zh") ? "、" : ", ";
+    return linkedKbs.map((kb) => kb.name).join(separator);
+  }, [linkedKbs, locale]);
 
   const scrollAnchorKey = useMemo(() => {
     const last = processedMessages.at(-1);
-    return `${processedMessages.length}:${last?.role ?? ""}:${last?.content?.length ?? 0}:${showStreamStatus}:${streamStatusLabel}`;
-  }, [processedMessages, showStreamStatus, streamStatusLabel]);
+    return `${processedMessages.length}:${last?.role ?? ""}:${last?.content?.length ?? 0}:${showRetrievalPanel}:${retrievalStream.phase ?? ""}:${answerStreamStarted}:${retrievalStream.documents.length}`;
+  }, [
+    processedMessages,
+    showRetrievalPanel,
+    retrievalStream.phase,
+    retrievalStream.documents.length,
+    answerStreamStarted,
+  ]);
 
   useEffect(() => {
     followContent({ streaming: isLoading });
   }, [scrollAnchorKey, isLoading, followContent]);
 
   const showWelcome = processedMessages.length === 0 && !isLoading;
-
   const welcomeKbName = linkedKbs.map((kb) => kb.name).join(", ");
+  const noKnowledgeBases = !isPageLoading && knowledgeBases.length === 0;
 
   const onFormSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!input.trim() || isLoading) return;
+    if (!input.trim() || isLoading || chatId == null) return;
+    if (selectedKbIds.length === 0) {
+      toast.error(t("selectKbBeforeSend"));
+      return;
+    }
     pinAndScrollToBottom("auto");
     handleSubmit(e);
+  };
+
+  const handleSaveEdit = async (newContent: string) => {
+    if (!editTarget || chatId == null) return;
+    setIsSavingEdit(true);
+    try {
+      await patchChatMessage(chatId, Number.parseInt(editTarget.id, 10), {
+        content: newContent,
+      });
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === editTarget.id ? { ...m, content: newContent } : m
+        )
+      );
+      setEditTarget(null);
+      await regenerateAfterUserEdit(editTarget.id);
+    } catch (err) {
+      const message =
+        err instanceof ApiError ? err.message : t("editMessageFailed");
+      toast.error(message);
+    } finally {
+      setIsSavingEdit(false);
+    }
   };
 
   const onComposerKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -279,187 +436,208 @@ export default function ChatPage({
   };
 
   if (isPageLoading) {
+    return <ChatConversationSkeleton />;
+  }
+
+  if (noKnowledgeBases) {
     return (
-      <DashboardLayout>
-        <ChatConversationSkeleton />
-      </DashboardLayout>
+      <div className="flex h-full min-h-0 flex-col items-center justify-center px-4">
+        <Empty className="max-w-md border border-dashed">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <Library />
+            </EmptyMedia>
+            <EmptyTitle>{t("noKbTitle")}</EmptyTitle>
+            <EmptyDescription>{t("noKbBody")}</EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
+            <Button asChild>
+              <Link href="/dashboard/knowledge/new">{t("goCreateKb")}</Link>
+            </Button>
+          </EmptyContent>
+        </Empty>
+      </div>
     );
   }
 
   return (
-    <DashboardLayout>
-      <div className="flex h-full min-h-0 w-full flex-col overflow-hidden">
-        <h1 className="sr-only">{chatTitle || t("listTitle")}</h1>
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden">
+      <h1 className="sr-only">{t("pageTitle")}</h1>
 
-        <header className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2 sm:px-6 lg:px-8">
-          <Button variant="outline" size="icon-sm" asChild>
-            <Link href="/dashboard/chat" aria-label={t("backToList")}>
-              <ArrowLeft />
-            </Link>
-          </Button>
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
-            <p className="min-w-0 truncate text-sm font-medium leading-tight">
-              {chatTitle || "—"}
-            </p>
-            {linkedKbs.length > 0 ? (
-              <div className="flex min-w-0 flex-wrap items-center gap-1">
-                {linkedKbs.map((kb) => (
-                  <Badge key={kb.id} variant="secondary" asChild>
-                    <Link href={`/dashboard/knowledge/${kb.id}`}>
-                      <Library />
-                      {kb.name}
-                    </Link>
-                  </Badge>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        </header>
-
+      <ScrollArea
+        ref={messagesScrollRef}
+        className="min-h-0 flex-1"
+        viewportClassName="overscroll-y-contain"
+      >
         <div
-          ref={messagesScrollRef}
-          className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-4 py-6 sm:px-6 lg:px-8"
+          ref={messagesContentRef}
+          className="mx-auto flex w-full max-w-5xl flex-col gap-0 py-6"
           role="log"
           aria-live="polite"
           aria-relevant="additions"
         >
-          <div
-              ref={messagesContentRef}
-              className="mx-auto w-full max-w-3xl space-y-8"
-            >
-              {showWelcome ? (
-                <Empty className="border border-dashed py-12">
-                  <EmptyHeader>
-                    <EmptyMedia variant="icon">
-                      <Library />
-                    </EmptyMedia>
-                    <EmptyTitle>{t("welcomeTitle")}</EmptyTitle>
-                    <EmptyDescription>
-                      {welcomeKbName
-                        ? t("welcomeDescription", { kb: welcomeKbName })
-                        : t("welcomeDescriptionNoKb")}
-                    </EmptyDescription>
-                  </EmptyHeader>
-                </Empty>
-              ) : null}
+          {showWelcome ? (
+            <Empty className="border border-dashed py-12">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <Library />
+                </EmptyMedia>
+                <EmptyTitle>{t("welcomeTitle")}</EmptyTitle>
+                <EmptyDescription>
+                  {welcomeKbName
+                    ? t("welcomeDescription", { kb: welcomeKbName })
+                    : t("welcomeDescriptionNoKb")}
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          ) : null}
 
-              {processedMessages.map((message, index) => {
-                const hideEmptyStreamingAssistant =
-                  isLoading &&
-                  message.role === "assistant" &&
-                  !message.content &&
-                  index === processedMessages.length - 1;
-                if (hideEmptyStreamingAssistant) return null;
+          {processedMessages.map((message, index) => {
+            const hideEmptyStreamingAssistant =
+              isLoading &&
+              message.role === "assistant" &&
+              !message.content &&
+              index === processedMessages.length - 1;
+            if (hideEmptyStreamingAssistant) return null;
 
-                return message.role === "assistant" ? (
-                  <article
-                    key={message.id}
-                    className="flex gap-3"
-                    aria-label="Assistant"
-                  >
-                    <Image
-                      src="/logo.png"
-                      alt={t("logoAlt")}
-                      width={32}
-                      height={32}
-                      className="size-8 shrink-0 rounded-full"
-                      sizes="32px"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <Answer
-                        markdown={message.content}
-                        citations={message.citations}
-                      />
-                    </div>
-                  </article>
-                ) : (
-                  <article
-                    key={message.id}
-                    className="flex justify-end"
-                    aria-label="You"
-                  >
-                    <div className="max-w-[min(100%,28rem)] rounded-lg border bg-muted px-4 py-2.5 text-sm">
-                      <p className="wrap-break-word whitespace-pre-wrap">
-                        {message.content}
-                      </p>
-                    </div>
-                  </article>
-                );
-              })}
+            const actionDisabled = isLoading || isSavingEdit;
 
-              {showStreamStatus ? (
-                <div
-                  className="flex items-center gap-2 text-sm text-muted-foreground"
-                  aria-live="polite"
-                >
-                  <Spinner className="size-4" />
-                  <span>{streamStatusLabel}</span>
-                </div>
-              ) : null}
-            </div>
+            return message.role === "assistant" ? (
+              <ChatMessageBlock
+                key={message.id}
+                role="assistant"
+                copyText={message.content}
+                feedback={message.feedback}
+                actionDisabled={actionDisabled}
+                actionHandlers={{
+                  onRegenerate: () => regenerateMessage(message.id),
+                  onFeedback: (fb) => setMessageFeedback(message.id, fb),
+                }}
+              >
+                <Answer
+                  markdown={message.content}
+                  citations={message.citations}
+                />
+              </ChatMessageBlock>
+            ) : (
+              <ChatMessageBlock
+                key={message.id}
+                role="user"
+                copyText={message.content}
+                actionDisabled={actionDisabled}
+                actionHandlers={{
+                  onEdit: () =>
+                    setEditTarget({
+                      id: message.id,
+                      content: message.content,
+                    }),
+                }}
+              >
+                <p className="max-w-[min(100%,32rem)] wrap-break-word whitespace-pre-wrap rounded-2xl bg-muted/70 px-3 py-2 text-[0.9375rem] leading-relaxed text-foreground">
+                  {message.content}
+                </p>
+              </ChatMessageBlock>
+            );
+          })}
+
+          {showRetrievalPanel ? (
+            <RetrievalStatusPanel
+              retrievalStream={retrievalStream}
+              isStreaming={isLoading}
+              answerStarted={answerStreamStarted}
+              answerFinished={answerFinished}
+              linkedKbNamesLabel={linkedKbNamesLabel}
+            />
+          ) : null}
         </div>
+      </ScrollArea>
 
-        <footer className="shrink-0 px-4 py-3 sm:px-6 lg:px-8">
-          <form
-            ref={formRef}
-            onSubmit={onFormSubmit}
-            className="mx-auto w-full max-w-3xl space-y-2"
-          >
-            <InputGroup>
-              <label htmlFor="chat-composer" className="sr-only">
-                {t("messagePlaceholder")}
-              </label>
-              <InputGroupTextarea
-                id="chat-composer"
-                name="message"
-                value={input}
-                onChange={handleInputChange}
-                onKeyDown={onComposerKeyDown}
-                placeholder={t("messagePlaceholder")}
-                rows={3}
-                autoComplete="off"
-                disabled={isLoading}
-              />
-              <InputGroupAddon align="block-end" className="justify-between">
+      <footer className="shrink-0 px-4 py-3 sm:px-6 lg:px-8">
+        <form
+          ref={formRef}
+          onSubmit={onFormSubmit}
+          className="mx-auto w-full max-w-5xl space-y-2"
+        >
+          <InputGroup>
+            <label htmlFor="chat-composer" className="sr-only">
+              {t("messagePlaceholder")}
+            </label>
+            <InputGroupTextarea
+              id="chat-composer"
+              name="message"
+              value={input}
+              onChange={handleInputChange}
+              onKeyDown={onComposerKeyDown}
+              placeholder={t("messagePlaceholder")}
+              rows={3}
+              autoComplete="off"
+              disabled={isLoading || chatId == null}
+            />
+            <InputGroupAddon align="block-end" className="justify-between gap-2">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <ModelSelector
                   providers={modelProviders}
                   value={selectedModel}
                   onValueChange={(nextModel) => {
                     void handleModelChange(nextModel);
                   }}
-                  disabled={isLoading || isUpdatingModel}
+                  disabled={isLoading || isUpdatingModel || chatId == null}
                   size="sm"
                   manageHref="/dashboard/llm-configs"
                 />
-                {isLoading ? (
-                  <InputGroupButton
-                    type="button"
-                    variant="outline"
-                    size="icon-sm"
-                    onClick={stop}
-                    aria-label={t("stopGeneration")}
-                  >
-                    <Square />
-                  </InputGroupButton>
-                ) : (
-                  <InputGroupButton
-                    type="submit"
-                    variant="default"
-                    size="icon-sm"
-                    disabled={!input.trim()}
-                    aria-label={t("sendMessage")}
-                  >
-                    <ArrowUp />
-                  </InputGroupButton>
-                )}
-              </InputGroupAddon>
-            </InputGroup>
-            <p className="hidden text-center text-xs text-muted-foreground sm:block">
-              {t("composerShortcutHint")}
-            </p>
-          </form>
-        </footer>
-      </div>
-    </DashboardLayout>
+                <KnowledgeBasePicker
+                  knowledgeBases={knowledgeBases}
+                  selectedIds={selectedKbIds}
+                  onSelectedIdsChange={handleKbSelectionChange}
+                  disabled={isLoading || isUpdatingKbs || chatId == null}
+                />
+              </div>
+              {isLoading ? (
+                <InputGroupButton
+                  type="button"
+                  variant="outline"
+                  size="icon-sm"
+                  onClick={stop}
+                  aria-label={t("stopGeneration")}
+                >
+                  <Square />
+                </InputGroupButton>
+              ) : (
+                <InputGroupButton
+                  type="submit"
+                  variant="default"
+                  size="icon-sm"
+                  disabled={!input.trim() || selectedKbIds.length === 0}
+                  aria-label={t("sendMessage")}
+                >
+                  <ArrowUp />
+                </InputGroupButton>
+              )}
+            </InputGroupAddon>
+          </InputGroup>
+          <p className="hidden text-center text-xs text-muted-foreground sm:block">
+            {t("composerShortcutHint")}
+          </p>
+        </form>
+      </footer>
+
+      <ChatMessageEditDialog
+        open={editTarget != null}
+        initialContent={editTarget?.content ?? ""}
+        isSubmitting={isSavingEdit}
+        onOpenChange={(open) => {
+          if (!open) setEditTarget(null);
+        }}
+        onSubmit={handleSaveEdit}
+      />
+    </div>
+  );
+}
+
+export default function ChatPage() {
+  return (
+    <Suspense fallback={<ChatConversationSkeleton />}>
+      <ChatPageContent />
+    </Suspense>
   );
 }

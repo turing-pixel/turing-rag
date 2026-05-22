@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 from typing import List, Optional
+from urllib.parse import urlparse
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -64,11 +65,17 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "10080"))
 
-    # Chat Provider settings
+    # Chat Provider settings (credentials follow CHAT_PROVIDER via CHAT_API_* / CHAT_MODEL)
     CHAT_PROVIDER: str = os.getenv("CHAT_PROVIDER", "openai")
+    CHAT_API_KEY: str = os.getenv("CHAT_API_KEY", "")
+    CHAT_API_BASE: str = os.getenv("CHAT_API_BASE", "")
+    CHAT_MODEL: str = os.getenv("CHAT_MODEL", "")
 
-    # Embeddings settings
+    # Embeddings settings (credentials follow EMBEDDINGS_PROVIDER via EMBEDDINGS_API_* / EMBEDDINGS_MODEL)
     EMBEDDINGS_PROVIDER: str = os.getenv("EMBEDDINGS_PROVIDER", "openai")
+    EMBEDDINGS_API_KEY: str = os.getenv("EMBEDDINGS_API_KEY", "")
+    EMBEDDINGS_API_BASE: str = os.getenv("EMBEDDINGS_API_BASE", "")
+    EMBEDDINGS_MODEL: str = os.getenv("EMBEDDINGS_MODEL", "")
 
     # MinIO settings
     MINIO_ENDPOINT: str = os.getenv("MINIO_ENDPOINT", "localhost:9000")
@@ -89,30 +96,41 @@ class Settings(BaseSettings):
     # Vector Store settings
     VECTOR_STORE_TYPE: str = os.getenv("VECTOR_STORE_TYPE", "chroma")
 
-    # Chroma DB settings
-    # CHROMA_MODE: persistent (local dev, no server) | http (Docker / chroma run)
-    CHROMA_MODE: str = os.getenv("CHROMA_MODE", "http")
-    CHROMA_PERSIST_DIRECTORY: str = os.getenv("CHROMA_PERSIST_DIRECTORY", "")
-    CHROMA_DB_HOST: str = os.getenv("CHROMA_DB_HOST", "chromadb")
-    CHROMA_DB_PORT: int = int(os.getenv("CHROMA_DB_PORT", "8000"))
+    # Chroma HTTP server (local: http://127.0.0.1:28100, prod: http://host.docker.internal:28100)
+    CHROMA_URL: str = os.getenv("CHROMA_URL", "http://chromadb:8000")
+
+    @property
+    def chroma_host(self) -> str:
+        """Host for chromadb.HttpClient (use 127.0.0.1 locally; macOS localhost may be IPv6-only)."""
+        host = urlparse(self.CHROMA_URL.strip()).hostname
+        if not host:
+            raise ValueError(f"Invalid CHROMA_URL: {self.CHROMA_URL!r}")
+        if host in ("localhost", "::1"):
+            return "127.0.0.1"
+        return host.strip("[]")
+
+    @property
+    def chroma_port(self) -> int:
+        parsed = urlparse(self.CHROMA_URL.strip())
+        if parsed.port is not None:
+            return parsed.port
+        return 443 if parsed.scheme == "https" else 80
 
     # Qdrant DB settings
     QDRANT_URL: str = os.getenv("QDRANT_URL", "http://localhost:6333")
     QDRANT_PREFER_GRPC: bool = os.getenv("QDRANT_PREFER_GRPC", "true").lower() == "true"
 
-    # Deepseek settings
-    DEEPSEEK_API_KEY: str = ""
-    DEEPSEEK_API_BASE: str = "https://api.deepseek.com"  # 默认 API 地址
-    DEEPSEEK_MODEL: str = "deepseek-v4-flash"  # 默认模型名称
+    # Legacy per-provider chat (fallback when CHAT_* empty)
+    DEEPSEEK_API_KEY: str = os.getenv("DEEPSEEK_API_KEY", "")
+    DEEPSEEK_API_BASE: str = os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com")
+    DEEPSEEK_MODEL: str = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
 
-    # MiniMax settings
-    MINIMAX_API_KEY: str = ""
-    MINIMAX_API_BASE: str = "https://api.minimax.io/v1"
-    MINIMAX_MODEL: str = "MiniMax-M2.7"
+    MINIMAX_API_KEY: str = os.getenv("MINIMAX_API_KEY", "")
+    MINIMAX_API_BASE: str = os.getenv("MINIMAX_API_BASE", "https://api.minimax.io/v1")
+    MINIMAX_MODEL: str = os.getenv("MINIMAX_MODEL", "MiniMax-M2.7")
 
-    # Ollama settings
-    OLLAMA_API_BASE: str = "http://localhost:11434"
-    OLLAMA_MODEL: str = "deepseek-r1:7b"
+    OLLAMA_API_BASE: str = os.getenv("OLLAMA_API_BASE", "http://localhost:11434")
+    OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "deepseek-r1:7b")
     # Ollama embedding: bge-m3 (1024 dims, multilingual) or nomic-embed-text (768 dims, lightweight)
     OLLAMA_EMBEDDINGS_MODEL: str = os.getenv("OLLAMA_EMBEDDINGS_MODEL", "bge-m3")
 
@@ -143,6 +161,21 @@ class Settings(BaseSettings):
             origins.append(u)
         origins.extend(_split_csv_urls(self.CORS_ALLOWED_ORIGINS))
         return list(dict.fromkeys(origins))
+
+    @property
+    def cors_allow_origin_regex(self) -> Optional[str]:
+        """LAN dev origins (e.g. http://192.168.x.x:3000 from Next.js Network URL)."""
+        env = os.getenv("ENVIRONMENT", "development").lower()
+        if env not in ("development", "dev", "local"):
+            return None
+        return (
+            r"https?://("
+            r"localhost|127\.0\.0\.1"
+            r"|192\.168\.\d{1,3}\.\d{1,3}"
+            r"|10\.\d{1,3}\.\d{1,3}\.\d{1,3}"
+            r"|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}"
+            r")(:\d+)?$"
+        )
 
 
 settings = Settings()

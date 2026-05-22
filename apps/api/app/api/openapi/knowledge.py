@@ -8,7 +8,7 @@ from app import models
 from app.db.session import get_db
 from app.core.security import get_api_key_user
 from app.core.config import settings
-from app.services.embedding.embedding_factory import EmbeddingsFactory
+from app.services.embedding.embedding_config_service import create_user_embeddings
 
 router = APIRouter()
 
@@ -36,7 +36,7 @@ def query_knowledge_base(
                 detail=f"Knowledge base {knowledge_base_id} not found",
             )
         
-        embeddings = EmbeddingsFactory.create()
+        embeddings = create_user_embeddings(db, current_user.id)
         
         vector_store = VectorStoreFactory.create(
             store_type=settings.VECTOR_STORE_TYPE,

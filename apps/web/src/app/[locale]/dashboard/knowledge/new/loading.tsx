@@ -1,11 +1,9 @@
-import DashboardLayout from "@/components/layout/dashboard-layout";
 import { DashboardPageContainer } from "@/components/layout/dashboard-page-container";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function NewKnowledgeBaseLoading() {
   return (
-    <DashboardLayout>
-      <DashboardPageContainer className="space-y-8">
+    <DashboardPageContainer className="space-y-8">
         <header className="space-y-2">
           <Skeleton className="h-8 w-56" />
           <Skeleton className="h-4 w-72 max-w-full" />
@@ -25,7 +23,6 @@ export default function NewKnowledgeBaseLoading() {
             <Skeleton className="h-9 w-24" />
           </div>
         </div>
-      </DashboardPageContainer>
-    </DashboardLayout>
+    </DashboardPageContainer>
   );
 }

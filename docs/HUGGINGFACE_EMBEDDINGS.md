@@ -7,14 +7,9 @@ This document explains how to use HuggingFace embedding models with RAG Web UI.
 Add the following to your `.env` file:
 
 ```bash
-# Set embeddings provider to huggingface
 EMBEDDINGS_PROVIDER=huggingface
-
-# Optional: HuggingFace API token (only needed for gated models or API usage)
-HUGGINGFACE_API_KEY=your_huggingface_token_here
-
-# HuggingFace embedding model to use
-HUGGINGFACE_EMBEDDINGS_MODEL=sentence-transformers/all-MiniLM-L6-v2
+EMBEDDINGS_API_KEY=your_huggingface_token_here
+EMBEDDINGS_MODEL=sentence-transformers/all-MiniLM-L6-v2
 ```
 
 ## Recommended Models
@@ -66,14 +61,14 @@ HUGGINGFACE_EMBEDDINGS_MODEL=sentence-transformers/all-MiniLM-L6-v2
 ### Local Model (No API Key Needed)
 ```bash
 EMBEDDINGS_PROVIDER=huggingface
-HUGGINGFACE_EMBEDDINGS_MODEL=sentence-transformers/all-MiniLM-L6-v2
+EMBEDDINGS_MODEL=sentence-transformers/all-MiniLM-L6-v2
 ```
 
 ### With API Token (For Gated Models)
 ```bash
 EMBEDDINGS_PROVIDER=huggingface
-HUGGINGFACE_API_KEY=hf_xxxxxxxxxxxxxxxxxxxxx
-HUGGINGFACE_EMBEDDINGS_MODEL=some-gated-model
+EMBEDDINGS_API_KEY=hf_xxxxxxxxxxxxxxxxxxxxx
+EMBEDDINGS_MODEL=some-gated-model
 ```
 
 ## Troubleshooting

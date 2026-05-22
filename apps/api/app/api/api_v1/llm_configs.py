@@ -10,6 +10,7 @@ from app.schemas.llm_config import (
     LlmConfigCreate,
     LlmConfigResponse,
     LlmConfigUpdate,
+    LlmEnvDefaultResponse,
     LlmFetchModelsResponse,
     LlmModelOptionResponse,
     LlmProbeRequest,
@@ -20,9 +21,11 @@ from app.schemas.llm_config import (
 from app.services.llm.llm_config_service import (
     create_llm_config,
     delete_llm_config,
+    get_env_default_llm_config,
     get_llm_config,
     get_provider_metadata,
     list_llm_configs,
+    set_env_default_llm_config,
     to_response,
     update_llm_config,
 )
@@ -99,6 +102,26 @@ def verify_model_endpoint(
     return LlmVerifyResponse(success=success, message=message)
 
 
+@router.get("/env-default", response_model=LlmEnvDefaultResponse)
+def read_env_default_llm_config(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    return LlmEnvDefaultResponse(**get_env_default_llm_config(db, current_user.id))
+
+
+@router.post("/env-default/set-default", response_model=LlmEnvDefaultResponse)
+def set_env_default_llm_config_endpoint(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    try:
+        set_env_default_llm_config(db, current_user.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return LlmEnvDefaultResponse(**get_env_default_llm_config(db, current_user.id))
+
+
 @router.get("", response_model=List[LlmConfigResponse])
 def read_llm_configs(
     db: Session = Depends(get_db),
@@ -107,7 +130,7 @@ def read_llm_configs(
     current_user: User = Depends(get_current_user),
 ) -> Any:
     configs = list_llm_configs(db, user_id=current_user.id, skip=skip, limit=limit)
-    return [LlmConfigResponse(**to_response(config)) for config in configs]
+    return [LlmConfigResponse(**to_response(config, db)) for config in configs]
 
 
 @router.get("/{config_id}", response_model=LlmConfigResponse)
@@ -119,7 +142,7 @@ def read_llm_config(
     config = get_llm_config(db, config_id, user_id=current_user.id)
     if not config:
         raise HTTPException(status_code=404, detail="LLM configuration not found")
-    return LlmConfigResponse(**to_response(config))
+    return LlmConfigResponse(**to_response(config, db))
 
 
 @router.post("", response_model=LlmConfigResponse)
@@ -133,7 +156,7 @@ def create_llm_config_endpoint(
         config = create_llm_config(db, user_id=current_user.id, data=config_in)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return LlmConfigResponse(**to_response(config))
+    return LlmConfigResponse(**to_response(config, db))
 
 
 @router.put("/{config_id}", response_model=LlmConfigResponse)
@@ -151,7 +174,7 @@ def update_llm_config_endpoint(
         config = update_llm_config(db, config=config, data=config_in)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return LlmConfigResponse(**to_response(config))
+    return LlmConfigResponse(**to_response(config, db))
 
 
 @router.delete("/{config_id}", response_model=LlmConfigResponse)
@@ -164,6 +187,6 @@ def delete_llm_config_endpoint(
     config = get_llm_config(db, config_id, user_id=current_user.id)
     if not config:
         raise HTTPException(status_code=404, detail="LLM configuration not found")
-    response = LlmConfigResponse(**to_response(config))
+    response = LlmConfigResponse(**to_response(config, db))
     delete_llm_config(db, config)
     return response

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import {
   Bot,
+  Check,
   CheckCircle2,
   MoreHorizontal,
   Pencil,
@@ -14,7 +15,6 @@ import {
   Unplug,
 } from "lucide-react";
 import { toast } from "sonner";
-import DashboardLayout from "@/components/layout/dashboard-layout";
 import { DashboardPageContainer } from "@/components/layout/dashboard-page-container";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -52,7 +52,6 @@ import {
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
@@ -66,6 +65,15 @@ import {
 import { ProviderIcon } from "@/components/llm/provider-icon";
 import { api, ApiError } from "@/lib/api";
 import { getProviderLabel } from "@/lib/llm-providers";
+
+interface LlmEnvDefault {
+  configured: boolean;
+  is_default?: boolean;
+  provider?: string;
+  model?: string;
+  api_base?: string | null;
+  api_key_masked?: string;
+}
 
 interface LlmConfig {
   id: number;
@@ -125,6 +133,7 @@ export default function LlmConfigsPage() {
   const t = useTranslations("llmConfigsPage");
   const tToast = useTranslations("toasts");
   const [configs, setConfigs] = useState<LlmConfig[]>([]);
+  const [envDefault, setEnvDefault] = useState<LlmEnvDefault | null>(null);
   const [providers, setProviders] = useState<ProviderMeta[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -159,12 +168,14 @@ export default function LlmConfigsPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [configsData, providersData] = await Promise.all([
+      const [configsData, providersData, envDefaultData] = await Promise.all([
         api.get("/api/llm-configs") as Promise<LlmConfig[]>,
         api.get("/api/llm-configs/providers") as Promise<{ providers: ProviderMeta[] }>,
+        api.get("/api/llm-configs/env-default") as Promise<LlmEnvDefault>,
       ]);
       setConfigs(configsData);
       setProviders(providersData.providers);
+      setEnvDefault(envDefaultData);
     } catch (error) {
       if (error instanceof ApiError) {
         toast.error(error.message);
@@ -390,13 +401,11 @@ export default function LlmConfigsPage() {
 
   const toggleActive = async (config: LlmConfig) => {
     try {
-      const updated = await api.put(`/api/llm-configs/${config.id}`, {
+      await api.put(`/api/llm-configs/${config.id}`, {
         is_active: !config.is_active,
       });
-      setConfigs((prev) =>
-        prev.map((item) => (item.id === config.id ? updated : item))
-      );
       toast.success(tToast("llmConfigUpdateSuccess"));
+      await fetchData();
     } catch (error) {
       if (error instanceof ApiError) {
         toast.error(error.message);
@@ -408,17 +417,31 @@ export default function LlmConfigsPage() {
 
   const setAsDefault = async (config: LlmConfig) => {
     if (config.is_default) return;
+    if (!config.is_active) {
+      toast.error(tToast("llmConfigSetDefaultRequiresActive"));
+      return;
+    }
     try {
-      const updated = await api.put(`/api/llm-configs/${config.id}`, {
+      await api.put(`/api/llm-configs/${config.id}`, {
         is_default: true,
       });
-      setConfigs((prev) =>
-        prev.map((item) => ({
-          ...item,
-          is_default: item.id === updated.id,
-        }))
-      );
       toast.success(tToast("llmConfigDefaultSuccess"));
+      await fetchData();
+    } catch (error) {
+      if (error instanceof ApiError) {
+        toast.error(error.message);
+      } else {
+        toast.error(tToast("llmConfigUpdateError"));
+      }
+    }
+  };
+
+  const setEnvAsDefault = async () => {
+    if (envDefault?.is_default) return;
+    try {
+      await api.post("/api/llm-configs/env-default/set-default");
+      toast.success(tToast("llmConfigDefaultSuccess"));
+      await fetchData();
     } catch (error) {
       if (error instanceof ApiError) {
         toast.error(error.message);
@@ -429,8 +452,7 @@ export default function LlmConfigsPage() {
   };
 
   return (
-    <DashboardLayout>
-      <DashboardPageContainer>
+    <DashboardPageContainer>
         <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1">
             <h1 className="text-2xl font-semibold tracking-tight">{t("title")}</h1>
@@ -448,21 +470,8 @@ export default function LlmConfigsPage() {
             rows={4}
             columnWidths={["w-32", "w-20", "w-8"]}
           />
-        ) : configs.length === 0 ? (
-          <Card>
-            <CardContent className="flex flex-col items-center py-16 text-center">
-              <Bot className="size-12 text-muted-foreground/50" />
-              <h3 className="mt-4 text-lg font-medium">{t("emptyTitle")}</h3>
-              <p className="mt-2 max-w-md text-sm text-muted-foreground">
-                {t("emptySubtitle")}
-              </p>
-              <Button className="mt-6 gap-2" onClick={openCreateDialog}>
-                <Plus className="size-4" />
-                {t("create")}
-              </Button>
-            </CardContent>
-          </Card>
-        ) : (
+        ) : envDefault?.configured ||
+          configs.length > 0 ? (
           <div className="rounded-md border">
             <Table>
               <TableHeader>
@@ -475,6 +484,88 @@ export default function LlmConfigsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
+                {envDefault?.configured &&
+                envDefault.provider &&
+                envDefault.model ? (
+                  <TableRow className="bg-muted/30">
+                    <TableCell>
+                      <div className="flex items-center gap-3">
+                        <ProviderIcon provider={envDefault.provider} size={20} />
+                        <div className="min-w-0">
+                          <p className="truncate font-medium">
+                            {t("envDefaultDisplayName")}
+                          </p>
+                          <p className="truncate text-sm text-muted-foreground">
+                            {getProviderLabel(
+                              envDefault.provider,
+                              providers.find(
+                                (p) => p.provider === envDefault.provider
+                              )?.label
+                            )}
+                            <span className="mx-1.5 text-muted-foreground/60">
+                              /
+                            </span>
+                            <span className="font-mono text-xs">
+                              {envDefault.model}
+                            </span>
+                          </p>
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap gap-1.5">
+                        {envDefault.is_default ? (
+                          <Badge variant="secondary">{t("defaultBadge")}</Badge>
+                        ) : null}
+                        <Badge variant="outline">{t("envDefaultReadOnlyBadge")}</Badge>
+                        <Badge variant="default">{t("statusActive")}</Badge>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <DropdownMenu modal={false}>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label={t("configActionsAria", {
+                              name: t("envDefaultDisplayName"),
+                            })}
+                          >
+                            <MoreHorizontal className="size-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent
+                          align="end"
+                          side="bottom"
+                          sideOffset={8}
+                          className="min-w-44"
+                        >
+                          <DropdownMenuLabel className="max-w-48 truncate font-normal">
+                            {t("envDefaultDisplayName")}
+                          </DropdownMenuLabel>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuGroup>
+                            <DropdownMenuItem
+                              disabled={envDefault.is_default}
+                              onSelect={(e) => {
+                                e.preventDefault();
+                                void setEnvAsDefault();
+                              }}
+                            >
+                              {envDefault.is_default ? (
+                                <Check className="size-4" />
+                              ) : (
+                                <Star className="size-4" />
+                              )}
+                              {t("actionSetDefault")}
+                            </DropdownMenuItem>
+                          </DropdownMenuGroup>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                ) : null}
                 {configs.map((config) => {
                   const providerLabel = getProviderLabel(
                     config.provider,
@@ -547,13 +638,17 @@ export default function LlmConfigsPage() {
                                 {t("actionEdit")}
                               </DropdownMenuItem>
                               <DropdownMenuItem
-                                disabled={config.is_default}
+                                disabled={config.is_default || !config.is_active}
                                 onSelect={(e) => {
                                   e.preventDefault();
                                   void setAsDefault(config);
                                 }}
                               >
-                                <Star className="size-4" />
+                                {config.is_default ? (
+                                  <Check className="size-4" />
+                                ) : (
+                                  <Star className="size-4" />
+                                )}
                                 {t("actionSetDefault")}
                               </DropdownMenuItem>
                               <DropdownMenuItem
@@ -589,6 +684,20 @@ export default function LlmConfigsPage() {
               </TableBody>
             </Table>
           </div>
+        ) : (
+          <Card>
+            <CardContent className="flex flex-col items-center py-16 text-center">
+              <Bot className="size-12 text-muted-foreground/50" />
+              <h3 className="mt-4 text-lg font-medium">{t("emptyTitle")}</h3>
+              <p className="mt-2 max-w-md text-sm text-muted-foreground">
+                {t("emptySubtitle")}
+              </p>
+              <Button className="mt-6 gap-2" onClick={openCreateDialog}>
+                <Plus className="size-4" />
+                {t("create")}
+              </Button>
+            </CardContent>
+          </Card>
         )}
 
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
@@ -677,8 +786,7 @@ export default function LlmConfigsPage() {
               <div className="grid gap-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <Label htmlFor="llm-model">{t("modelLabel")}</Label>
-                  <TooltipProvider delayDuration={200}>
-                    <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1">
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <span className="inline-flex">
@@ -738,8 +846,7 @@ export default function LlmConfigsPage() {
                               : t("verifyConnectionTooltip")}
                         </TooltipContent>
                       </Tooltip>
-                    </div>
-                  </TooltipProvider>
+                  </div>
                 </div>
 
                 {fetchedModels.length > 0 ? (
@@ -826,7 +933,6 @@ export default function LlmConfigsPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </DashboardPageContainer>
-    </DashboardLayout>
+    </DashboardPageContainer>
   );
 }

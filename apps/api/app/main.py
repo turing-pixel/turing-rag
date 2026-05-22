@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from app.api.api_v1.api import api_router
@@ -23,6 +24,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_allow_origins,
+    allow_origin_regex=settings.cors_allow_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -33,13 +35,25 @@ app.include_router(api_router, prefix=settings.API_V1_STR)
 app.include_router(openapi_router, prefix="/openapi")
 
 
+_DEFAULT_SECRET_KEY = "your-secret-key-here"
+
+
 @app.on_event("startup")
 async def startup_event():
+    if settings.SECRET_KEY == _DEFAULT_SECRET_KEY:
+        logging.getLogger(__name__).warning(
+            "SECRET_KEY is using the default placeholder; set a strong SECRET_KEY in production"
+        )
+
     # Initialize MinIO
     init_minio()
     # Run database migrations
     migrator = DatabaseMigrator(settings.get_database_url)
     migrator.run_migrations()
+    if settings.VECTOR_STORE_TYPE.lower().strip() == "chroma":
+        from app.services.vector_store.chroma_client import warmup_chroma_client
+
+        await asyncio.to_thread(warmup_chroma_client)
 
 
 @app.get("/")
@@ -49,7 +63,21 @@ def root():
 
 @app.get("/api/health")
 async def health_check():
-    return {
+    payload: dict = {
         "status": "healthy",
         "version": settings.VERSION,
     }
+    if settings.VECTOR_STORE_TYPE.lower().strip() == "chroma":
+        chroma_status: dict = {"url": settings.CHROMA_URL}
+        try:
+            from app.services.vector_store.chroma_client import create_chroma_client
+
+            client = await asyncio.to_thread(create_chroma_client)
+            await asyncio.to_thread(client.heartbeat)
+            chroma_status["status"] = "ok"
+        except Exception as exc:
+            payload["status"] = "degraded"
+            chroma_status["status"] = "error"
+            chroma_status["detail"] = str(exc)
+        payload["chroma"] = chroma_status
+    return payload

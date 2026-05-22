@@ -13,6 +13,8 @@ export const LLM_PROVIDER_ICONS: Record<string, string> = {
   azure: "azure.svg",
   zhipu: "bigmodel.svg",
   ollama: "ollama.svg",
+  dashscope: "Qwen.svg",
+  huggingface: "Hugging Face.svg",
 };
 
 export const LLM_PROVIDER_LABELS: Record<string, string> = {
@@ -27,6 +29,8 @@ export const LLM_PROVIDER_LABELS: Record<string, string> = {
   azure: "Azure OpenAI",
   zhipu: "Zhipu AI",
   ollama: "Ollama",
+  dashscope: "DashScope",
+  huggingface: "HuggingFace",
 };
 
 export function resolveProviderTheme(resolvedTheme?: string | null): ProviderTheme {

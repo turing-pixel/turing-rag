@@ -1,15 +1,12 @@
-import DashboardLayout from "@/components/layout/dashboard-layout";
 import { DashboardPageContainer } from "@/components/layout/dashboard-page-container";
 import { KnowledgeBaseGridSkeleton } from "@/components/skeletons/knowledge-base-grid-skeleton";
 import { PageHeaderSkeleton } from "@/components/skeletons/page-header-skeleton";
 
 export default function KnowledgeLoading() {
   return (
-    <DashboardLayout>
-      <DashboardPageContainer className="space-y-6">
+    <DashboardPageContainer className="space-y-6">
         <PageHeaderSkeleton />
         <KnowledgeBaseGridSkeleton />
-      </DashboardPageContainer>
-    </DashboardLayout>
+    </DashboardPageContainer>
   );
 }

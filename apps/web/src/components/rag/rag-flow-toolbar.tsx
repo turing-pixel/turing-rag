@@ -16,7 +16,6 @@ import { Button } from "@/components/ui/button";
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -79,7 +78,6 @@ export function RagFlowToolbar({
 
   return (
     <Panel position="top-right" className="m-0!">
-      <TooltipProvider delayDuration={300}>
         <div
           className="flex items-center gap-0.5 rounded-lg border border-border bg-card/95 p-1 shadow-md backdrop-blur-sm"
           role="toolbar"
@@ -137,7 +135,6 @@ export function RagFlowToolbar({
             </TooltipContent>
           </Tooltip>
         </div>
-      </TooltipProvider>
     </Panel>
   );
 }

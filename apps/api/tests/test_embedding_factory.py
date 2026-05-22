@@ -55,8 +55,8 @@ class TestEmbeddingsFactoryOllama:
     def test_factory_uses_bge_m3(self, mock_create):
         env = {
             "EMBEDDINGS_PROVIDER": "ollama",
-            "OLLAMA_EMBEDDINGS_MODEL": "bge-m3",
-            "OLLAMA_API_BASE": "http://localhost:11434",
+            "EMBEDDINGS_API_BASE": "http://localhost:11434",
+            "EMBEDDINGS_MODEL": "bge-m3",
         }
         with patch.dict(os.environ, env, clear=False):
             EmbeddingsFactory.create()
@@ -68,8 +68,8 @@ class TestEmbeddingsFactoryOllama:
     def test_factory_uses_nomic_embed_text(self, mock_create):
         env = {
             "EMBEDDINGS_PROVIDER": "ollama",
-            "OLLAMA_EMBEDDINGS_MODEL": "nomic-embed-text",
-            "OLLAMA_API_BASE": "http://localhost:11434",
+            "EMBEDDINGS_API_BASE": "http://localhost:11434",
+            "EMBEDDINGS_MODEL": "nomic-embed-text",
         }
         with patch.dict(os.environ, env, clear=False):
             EmbeddingsFactory.create()
@@ -78,9 +78,40 @@ class TestEmbeddingsFactoryOllama:
         )
 
     def test_factory_ollama_requires_model(self):
-        with patch("app.services.embedding.embedding_factory.settings") as mock_settings:
-            mock_settings.EMBEDDINGS_PROVIDER = "ollama"
-            mock_settings.OLLAMA_EMBEDDINGS_MODEL = ""
-            mock_settings.OLLAMA_API_BASE = "http://localhost:11434"
-            with pytest.raises(ValueError, match="OLLAMA_EMBEDDINGS_MODEL"):
+        from app.core.config import Settings
+
+        with patch.dict(
+            os.environ,
+            {
+                "EMBEDDINGS_PROVIDER": "ollama",
+                "EMBEDDINGS_API_BASE": "http://localhost:11434",
+                "EMBEDDINGS_MODEL": "",
+                "OLLAMA_EMBEDDINGS_MODEL": "",
+            },
+            clear=False,
+        ):
+            with patch("app.core.embedding_env.settings", Settings()):
+                with pytest.raises(ValueError, match="EMBEDDINGS_MODEL"):
+                    EmbeddingsFactory.create()
+
+    @patch("app.services.embedding.embedding_factory.create_ollama_embeddings")
+    def test_legacy_ollama_env_fallback(self, mock_create):
+        from app.core.config import Settings
+
+        with patch.dict(
+            os.environ,
+            {
+                "EMBEDDINGS_PROVIDER": "ollama",
+                "EMBEDDINGS_API_KEY": "",
+                "EMBEDDINGS_API_BASE": "",
+                "EMBEDDINGS_MODEL": "",
+                "OLLAMA_API_BASE": "http://localhost:11434",
+                "OLLAMA_EMBEDDINGS_MODEL": "bge-m3:latest",
+            },
+            clear=False,
+        ):
+            with patch("app.core.embedding_env.settings", Settings()):
                 EmbeddingsFactory.create()
+        mock_create.assert_called_once_with(
+            model="bge-m3:latest", base_url="http://localhost:11434"
+        )

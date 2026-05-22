@@ -1,6 +1,6 @@
 # Ollama Embedding Models
 
-RAG Web UI supports two recommended Ollama embedding models via `OLLAMA_EMBEDDINGS_MODEL`:
+RAG Web UI supports two recommended Ollama embedding models via `EMBEDDINGS_MODEL` (when `EMBEDDINGS_PROVIDER=ollama`):
 
 | Model | Dimensions | Size | Best for |
 | ----- | ---------- | ---- | -------- |
@@ -19,16 +19,16 @@ ollama pull nomic-embed-text
 
 ```env
 EMBEDDINGS_PROVIDER=ollama
-OLLAMA_API_BASE=http://localhost:11434
-OLLAMA_EMBEDDINGS_MODEL=bge-m3
-# OLLAMA_EMBEDDINGS_MODEL=nomic-embed-text
+EMBEDDINGS_API_BASE=http://localhost:11434
+EMBEDDINGS_MODEL=bge-m3
+# EMBEDDINGS_MODEL=nomic-embed-text
 ```
 
 Use `http://host.docker.internal:11434` when the backend runs in Docker and Ollama runs on the host.
 
 ## Switching models
 
-Embedding dimensions differ between models. After changing `OLLAMA_EMBEDDINGS_MODEL`, **re-process all documents** in affected knowledge bases (or recreate the knowledge base).
+Embedding dimensions differ between models. After changing `EMBEDDINGS_MODEL`, **re-process all documents** in affected knowledge bases (or recreate the knowledge base).
 
 ## Verify
 

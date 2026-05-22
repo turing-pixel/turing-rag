@@ -1,6 +1,8 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { CheckCircle2 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
@@ -18,8 +20,10 @@ import {
   resolveTaskForFile,
   type ProcessingTaskStatusMap,
 } from "@/lib/document-processing-poll";
+import { formatProgressMessage } from "@/lib/progress-message-i18n";
 import { formatPipelineFileSize } from "@/lib/processing-task-status-ui";
 import type { PersistedProcessingTask } from "@/lib/document-upload-persistence";
+import { cn } from "@/lib/utils";
 
 export type PipelineFileItem = {
   file: File;
@@ -43,6 +47,25 @@ type DocumentProcessingPipelineListProps = {
   progressAriaLabel: string;
 };
 
+function PipelineItemStatus({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex max-w-44 items-center gap-2 text-xs text-muted-foreground sm:max-w-52",
+        className
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
 export function DocumentProcessingPipelineList({
   files,
   taskStatuses,
@@ -50,57 +73,80 @@ export function DocumentProcessingPipelineList({
   formatStatus,
   progressAriaLabel,
 }: DocumentProcessingPipelineListProps) {
+  const tProgress = useTranslations("processingProgress");
+
   if (files.length === 0) {
     return null;
   }
 
   return (
     <ScrollArea>
-      <ItemGroup>
+      <ItemGroup className="gap-2">
         {files.map((file) => {
           const task = resolveTaskForFile(file, taskStatuses, resumeTasks);
-          const taskStatus = task?.status ?? "processing";
-          const taskProgress =
-            taskStatus === "completed" ? 100 : (task?.progress ?? 0);
+          const taskStatus = task?.status;
           const isTaskActive =
-            taskStatus === "pending" || taskStatus === "processing";
+            file.status === "processing" ||
+            taskStatus === "pending" ||
+            taskStatus === "processing";
+          const rawProgressMessage = task?.progress_message?.trim();
+          const statusLabel =
+            rawProgressMessage != null && rawProgressMessage !== ""
+              ? formatProgressMessage(rawProgressMessage, tProgress)
+              : isTaskActive && taskStatus
+                ? formatStatus(taskStatus)
+                : "";
           const fileSize = formatPipelineFileSize(file.file.size);
           const hasError =
             task?.status === "failed" || file.status === "error";
+          const isCompleted =
+            taskStatus === "completed" || file.status === "completed";
 
           return (
             <Item
               key={file.uploadId ?? file.taskId ?? file.file.name}
               variant="outline"
+              size="sm"
             >
               <ItemMedia>
                 <DocumentFileIcon fileName={file.file.name} size="lg" />
               </ItemMedia>
-              <ItemContent>
+              <ItemContent className="min-w-0">
                 <ItemTitle>{file.file.name}</ItemTitle>
                 {fileSize ? (
                   <ItemDescription>{fileSize}</ItemDescription>
                 ) : null}
               </ItemContent>
               <ItemActions
+                className="shrink-0 self-center"
                 aria-label={isTaskActive ? progressAriaLabel : undefined}
                 aria-live={isTaskActive ? "polite" : undefined}
               >
                 {isTaskActive ? (
-                  <>
-                    <Spinner />
-                    <ItemDescription>{taskProgress}%</ItemDescription>
-                  </>
+                  <PipelineItemStatus>
+                    <Spinner className="size-3.5 shrink-0" aria-hidden />
+                    {statusLabel ? (
+                      <span className="min-w-0 truncate leading-snug">
+                        {statusLabel}
+                      </span>
+                    ) : null}
+                  </PipelineItemStatus>
                 ) : null}
-                {taskStatus === "completed" ? (
-                  <>
-                    <CheckCircle2 aria-hidden />
-                    <ItemDescription>{formatStatus(taskStatus)}</ItemDescription>
-                  </>
+                {isCompleted ? (
+                  <PipelineItemStatus>
+                    <CheckCircle2
+                      className="size-3.5 shrink-0 text-primary"
+                      aria-hidden
+                    />
+                    <span className="min-w-0 truncate leading-snug">
+                      {formatStatus(taskStatus ?? "completed")}
+                    </span>
+                  </PipelineItemStatus>
                 ) : null}
                 {hasError ? (
                   <Badge
                     variant="destructive"
+                    className="max-w-44 truncate font-normal sm:max-w-52"
                     title={task?.error_message || file.error}
                   >
                     {task?.error_message || file.error}

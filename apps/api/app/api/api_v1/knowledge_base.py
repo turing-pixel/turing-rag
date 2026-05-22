@@ -8,7 +8,7 @@ from sqlalchemy import text
 import logging
 from datetime import datetime, timedelta
 from pydantic import BaseModel
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload, selectinload
 import time
 import asyncio
 
@@ -21,6 +21,7 @@ from app.schemas.knowledge import (
     KnowledgeBaseResponse,
     KnowledgeBaseUpdate,
     DocumentResponse,
+    DocumentDetailResponse,
     PreviewRequest,
 )
 from app.services.kb_response import serialize_kb_response
@@ -30,12 +31,15 @@ from app.services.document_processor import (
     preview_document,
     PreviewResult,
     queue_retry_failed_processing_tasks,
+    queue_document_reprocess,
+    delete_knowledge_base_document,
+    DocumentDeleteError,
 )
 from app.core.config import settings
 from app.core.minio import get_minio_client
 from minio.error import MinioException
 from app.services.vector_store import VectorStoreFactory
-from app.services.embedding.embedding_factory import EmbeddingsFactory
+from app.services.embedding.embedding_config_service import create_user_embeddings
 
 router = APIRouter()
 
@@ -208,7 +212,7 @@ async def delete_knowledge_base(
         
         # Initialize services
         minio_client = get_minio_client()
-        embeddings = EmbeddingsFactory.create()
+        embeddings = create_user_embeddings(db, current_user.id)
 
         vector_store = VectorStoreFactory.create(
             store_type=settings.VECTOR_STORE_TYPE,
@@ -461,6 +465,29 @@ async def process_kb_documents(
     return {"tasks": task_info}
 
 
+@router.post("/{kb_id}/documents/{doc_id}/reprocess")
+async def reprocess_document(
+    kb_id: int,
+    doc_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Re-run chunking and embedding for one existing document (e.g. after changing embedding model).
+    """
+    kb = db.query(KnowledgeBase).filter(
+        KnowledgeBase.id == kb_id,
+        KnowledgeBase.user_id == current_user.id,
+    ).first()
+    if not kb:
+        raise HTTPException(status_code=404, detail="Knowledge base not found")
+
+    try:
+        return queue_document_reprocess(db, kb_id, doc_id)
+    except DocumentDeleteError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message)
+
+
 @router.post("/{kb_id}/documents/retry-failed")
 async def retry_failed_documents(
     kb_id: int,
@@ -535,16 +562,21 @@ async def get_processing_tasks(
     """
     Get status of multiple processing tasks.
     """
-    task_id_list = [int(id.strip()) for id in task_ids.split(",")]
-    
-    kb = db.query(KnowledgeBase).filter(
-        KnowledgeBase.id == kb_id,
-        KnowledgeBase.user_id == current_user.id
-    ).first()
-    
-    if not kb:
+    task_id_list = [int(id.strip()) for id in task_ids.split(",") if id.strip()]
+    if not task_id_list:
+        return {}
+
+    kb_exists = (
+        db.query(KnowledgeBase.id)
+        .filter(
+            KnowledgeBase.id == kb_id,
+            KnowledgeBase.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not kb_exists:
         raise HTTPException(status_code=404, detail="Knowledge base not found")
-        
+
     tasks = (
         db.query(ProcessingTask)
         .options(
@@ -570,7 +602,7 @@ async def get_processing_tasks(
         for task in tasks
     }
 
-@router.get("/{kb_id}/documents/{doc_id}", response_model=DocumentResponse)
+@router.get("/{kb_id}/documents/{doc_id}", response_model=DocumentDetailResponse)
 async def get_document(
     *,
     db: Session = Depends(get_db),
@@ -583,6 +615,7 @@ async def get_document(
     """
     document = (
         db.query(Document)
+        .options(joinedload(Document.processing_tasks))
         .join(KnowledgeBase)
         .filter(
             Document.id == doc_id,
@@ -594,8 +627,51 @@ async def get_document(
 
     if not document:
         raise HTTPException(status_code=404, detail="Document not found")
-    
-    return document
+
+    chunk_count = (
+        db.query(DocumentChunk)
+        .filter(DocumentChunk.document_id == doc_id)
+        .count()
+    )
+    payload = DocumentDetailResponse.model_validate(document)
+    return payload.model_copy(update={"chunk_count": chunk_count})
+
+
+@router.delete("/{kb_id}/documents/{doc_id}")
+async def delete_document(
+    *,
+    db: Session = Depends(get_db),
+    kb_id: int,
+    doc_id: int,
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """
+    Delete a document and associated vectors, chunks, processing tasks, and storage.
+    """
+    document = (
+        db.query(Document)
+        .join(KnowledgeBase)
+        .filter(
+            Document.id == doc_id,
+            Document.knowledge_base_id == kb_id,
+            KnowledgeBase.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    try:
+        return delete_knowledge_base_document(db, document, kb_id)
+    except DocumentDeleteError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message)
+    except Exception as exc:
+        db.rollback()
+        logger.error("Failed to delete document %s: %s", doc_id, exc)
+        raise HTTPException(
+            status_code=500, detail=f"Failed to delete document: {exc}"
+        )
+
 
 @router.post("/test-retrieval")
 async def test_retrieval(
@@ -619,7 +695,7 @@ async def test_retrieval(
                 detail=f"Knowledge base {request.kb_id} not found",
             )
         
-        embeddings = EmbeddingsFactory.create()
+        embeddings = create_user_embeddings(db, current_user.id)
         
         vector_store = VectorStoreFactory.create(
             store_type=settings.VECTOR_STORE_TYPE,

@@ -5,7 +5,6 @@ import { Link, useRouter } from "@/i18n/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { Plus, Library } from "lucide-react";
-import DashboardLayout from "@/components/layout/dashboard-layout";
 import { DashboardPageContainer } from "@/components/layout/dashboard-page-container";
 import {
   KnowledgeBaseCard,
@@ -20,7 +19,7 @@ import {
 } from "@/lib/kb-icon-colors";
 import { useDocumentUpload } from "@/components/knowledge-base/document-upload-provider";
 import { api, ApiError } from "@/lib/api";
-import { startChatWithKnowledgeBase } from "@/lib/start-chat";
+import { chatUrlWithKnowledgeBases } from "@/lib/start-chat";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -54,7 +53,6 @@ export default function KnowledgeBasePage() {
   const [editIconColor, setEditIconColor] =
     useState<KbIconColor>(DEFAULT_KB_ICON_COLOR);
   const [isSaving, setIsSaving] = useState(false);
-  const [startingChatKbId, setStartingChatKbId] = useState<number | null>(null);
   const { openDocumentUpload } = useDocumentUpload();
 
   useEffect(() => {
@@ -135,21 +133,8 @@ export default function KnowledgeBasePage() {
     }
   };
 
-  const handleQuickChat = async (kb: KnowledgeBase) => {
-    setStartingChatKbId(kb.id);
-    try {
-      const data = await startChatWithKnowledgeBase(kb);
-      router.push(`/dashboard/chat/${data.id}`);
-    } catch (error) {
-      console.error("Failed to start chat:", error);
-      if (error instanceof ApiError) {
-        toast.error(error.message);
-      } else {
-        toast.error(t("chatStartError"));
-      }
-    } finally {
-      setStartingChatKbId(null);
-    }
+  const handleQuickChat = (kb: KnowledgeBase) => {
+    router.push(chatUrlWithKnowledgeBases(kb.id));
   };
 
   const handleDelete = async (id: number) => {
@@ -167,8 +152,7 @@ export default function KnowledgeBasePage() {
   };
 
   return (
-    <DashboardLayout>
-      <DashboardPageContainer className="space-y-6" aria-busy={loading}>
+    <DashboardPageContainer className="space-y-6" aria-busy={loading}>
         <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1">
             <h1 className="text-2xl font-semibold tracking-tight">
@@ -209,7 +193,7 @@ export default function KnowledgeBasePage() {
                 kb={kb}
                 dateLocale={dateLocale}
                 testRetrievalLabel={tBreadcrumbSeg("test-retrieval")}
-                isStartingChat={startingChatKbId === kb.id}
+                isStartingChat={false}
                 onEdit={() => openEditDialog(kb)}
                 onDelete={() => handleDelete(kb.id)}
                 onQuickChat={() => handleQuickChat(kb)}
@@ -279,7 +263,6 @@ export default function KnowledgeBasePage() {
             </form>
           </DialogContent>
         </Dialog>
-      </DashboardPageContainer>
-    </DashboardLayout>
+    </DashboardPageContainer>
   );
 }

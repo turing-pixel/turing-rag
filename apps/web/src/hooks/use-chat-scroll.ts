@@ -95,6 +95,19 @@ export function useChatScroll({
     [runFollowScroll]
   );
 
+  /** Scroll after layout/paint (e.g. initial history load). */
+  const scrollToBottomAfterLayout = useCallback(
+    (behavior: ScrollBehavior = "auto") => {
+      pinnedToBottomRef.current = true;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          scrollToBottom(behavior);
+        });
+      });
+    },
+    [scrollToBottom]
+  );
+
   const markSkipNextFollow = useCallback(() => {
     skipNextFollowRef.current = true;
   }, []);
@@ -168,6 +181,7 @@ export function useChatScroll({
     contentRef,
     followContent,
     pinAndScrollToBottom,
+    scrollToBottomAfterLayout,
     markSkipNextFollow,
     isNearBottom,
   };

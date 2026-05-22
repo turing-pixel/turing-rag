@@ -4,7 +4,6 @@ import { useTranslations } from "next-intl";
 import { GitBranch } from "lucide-react";
 
 import { RagPipelineFlow } from "@/components/rag/rag-pipeline-flow";
-import DashboardLayout from "@/components/layout/dashboard-layout";
 import { DashboardPageContainer } from "@/components/layout/dashboard-page-container";
 import { Badge } from "@/components/ui/badge";
 
@@ -14,8 +13,7 @@ export default function RagPipelinePage() {
   const t = useTranslations("dashboard.rag");
 
   return (
-    <DashboardLayout>
-      <DashboardPageContainer className="max-w-none space-y-6">
+    <DashboardPageContainer className="max-w-none space-y-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
@@ -69,7 +67,6 @@ export default function RagPipelinePage() {
           </section>
           </div>
         </div>
-      </DashboardPageContainer>
-    </DashboardLayout>
+    </DashboardPageContainer>
   );
 }

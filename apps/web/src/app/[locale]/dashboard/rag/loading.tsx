@@ -1,11 +1,9 @@
-import DashboardLayout from "@/components/layout/dashboard-layout";
 import { DashboardPageContainer } from "@/components/layout/dashboard-page-container";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function RagPipelineLoading() {
   return (
-    <DashboardLayout>
-      <DashboardPageContainer className="max-w-none space-y-6">
+    <DashboardPageContainer className="max-w-none space-y-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="space-y-2">
             <Skeleton className="h-8 w-56" />
@@ -23,7 +21,6 @@ export default function RagPipelineLoading() {
             <Skeleton key={index} className="h-28 w-full rounded-lg" />
           ))}
         </div>
-      </DashboardPageContainer>
-    </DashboardLayout>
+    </DashboardPageContainer>
   );
 }

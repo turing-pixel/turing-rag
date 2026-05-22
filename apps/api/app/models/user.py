@@ -18,4 +18,13 @@ class User(Base, TimestampMixin):
     api_keys = relationship("APIKey", back_populates="user", cascade="all, delete-orphan")
     llm_configs = relationship(
         "LlmConfig", back_populates="user", cascade="all, delete-orphan"
-    ) 
+    )
+    embedding_configs = relationship(
+        "EmbeddingConfig", back_populates="user", cascade="all, delete-orphan"
+    )
+    preferences = relationship(
+        "UserPreference",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )

@@ -12,6 +12,7 @@ services:
     environment:
       - DEBUG=1
       - PYTHONUNBUFFERED=1
+      - CHROMA_URL=http://chromadb:8000
     volumes:
       - ./apps/api:/app
       - ./uploads:/app/uploads
@@ -76,6 +77,10 @@ services:
     image: chromadb/chroma:latest
     ports:
       - "8001:8000"
+    environment:
+      - ANONYMIZED_TELEMETRY=False
+      - IS_PERSISTENT=TRUE
+      - PERSIST_DIRECTORY=/chroma/chroma
     volumes:
       - chroma_data:/chroma/chroma
     networks:

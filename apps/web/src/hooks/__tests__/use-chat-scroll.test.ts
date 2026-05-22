@@ -66,4 +66,31 @@ describe("useChatScroll", () => {
 
     expect(container.scrollTo.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
+
+  it("scrollToBottomAfterLayout scrolls container to bottom", () => {
+    const { result } = renderHook(() => useChatScroll());
+
+    const container = document.createElement("div");
+    Object.defineProperty(container, "scrollHeight", {
+      value: 800,
+      configurable: true,
+    });
+    Object.defineProperty(container, "clientHeight", {
+      value: 300,
+      configurable: true,
+    });
+    container.scrollTo = jest.fn();
+
+    act(() => {
+      (
+        result.current.scrollRef as React.MutableRefObject<HTMLDivElement | null>
+      ).current = container;
+      result.current.scrollToBottomAfterLayout("auto");
+    });
+
+    expect(container.scrollTo).toHaveBeenCalledWith({
+      top: 800,
+      behavior: "auto",
+    });
+  });
 });

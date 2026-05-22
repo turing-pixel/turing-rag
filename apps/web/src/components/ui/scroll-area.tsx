@@ -5,28 +5,36 @@ import { ScrollArea as ScrollAreaPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 
-function ScrollArea({
-  className,
-  children,
-  ...props
-}: React.ComponentProps<typeof ScrollAreaPrimitive.Root>) {
-  return (
-    <ScrollAreaPrimitive.Root
-      data-slot="scroll-area"
-      className={cn("relative", className)}
-      {...props}
-    >
-      <ScrollAreaPrimitive.Viewport
-        data-slot="scroll-area-viewport"
-        className="size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1"
-      >
-        {children}
-      </ScrollAreaPrimitive.Viewport>
-      <ScrollBar />
-      <ScrollAreaPrimitive.Corner />
-    </ScrollAreaPrimitive.Root>
-  )
+type ScrollAreaProps = React.ComponentProps<typeof ScrollAreaPrimitive.Root> & {
+  /** Classes applied to the scrollable viewport (receives forwarded ref). */
+  viewportClassName?: string
 }
+
+const ScrollArea = React.forwardRef<HTMLDivElement, ScrollAreaProps>(
+  function ScrollArea({ className, viewportClassName, children, ...props }, ref) {
+    return (
+      <ScrollAreaPrimitive.Root
+        data-slot="scroll-area"
+        className={cn("relative", className)}
+        {...props}
+      >
+        <ScrollAreaPrimitive.Viewport
+          ref={ref}
+          data-slot="scroll-area-viewport"
+          className={cn(
+            "size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1",
+            viewportClassName
+          )}
+        >
+          {children}
+        </ScrollAreaPrimitive.Viewport>
+        <ScrollBar />
+        <ScrollAreaPrimitive.Corner />
+      </ScrollAreaPrimitive.Root>
+    )
+  }
+)
+ScrollArea.displayName = "ScrollArea"
 
 function ScrollBar({
   className,

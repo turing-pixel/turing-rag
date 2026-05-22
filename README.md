@@ -5,9 +5,6 @@
   <p><strong>基于 RAG 的企业/个人知识库问答系统</strong></p>
   <p>
     <a href="LICENSE">Apache License 2.0</a>
-    · <a href="docs/troubleshooting.md">常见问题与排错</a>
-    · <a href="docs/blog/deploy-local.md">本地部署说明</a>
-    · <a href="docs/tutorial/README.md">RAG 教程</a>
     · <a href="README.zh-CN.md">详细版说明（含截图与架构图）</a>
   </p>
 </div>
@@ -27,7 +24,6 @@
 - [技术栈](#技术栈)
 - [配置说明](#配置说明)
 - [部署与运维](#部署与运维)
-- [文档索引](#文档索引)
 - [许可证与致谢](#许可证与致谢)
 
 ## 一句话说明
@@ -68,7 +64,7 @@
 4. **上传文档** — 支持常见办公与文本格式；后台完成解析与入库后再提问效果更好。
 5. **开始对话** — 用日常语言提问；若回答引用了资料，请以 **原始文档为准** 核对重要结论（数字、日期、合规类内容尤需如此）。
 
-无法登录、上传失败、回答异常时，请先查看 **[常见问题与排错](docs/troubleshooting.md)**，或联系为您提供服务的一方。
+无法登录、上传失败、回答异常时，请联系为您提供服务的一方（部署方或运维）。
 
 ## 从提问到回答
 
@@ -131,7 +127,7 @@ docker compose up -d --build
 | MinIO 控制台 | http://localhost:9001 |
 | Chroma（宿主机映射） | http://localhost:8001 |
 
-使用 **Ollama** 时，请在宿主机安装并拉取对话与向量模型，`.env` 中 `OLLAMA_API_BASE` 在 Compose 内通常为 `http://host.docker.internal:11434`。分步说明见 **[本地部署说明](docs/blog/deploy-local.md)**。
+使用 **Ollama** 时，请在宿主机安装并拉取对话与向量模型（如 `deepseek-r1:7b`、`bge-m3`），`.env` 中 `OLLAMA_API_BASE` 在 Compose 内通常为 `http://host.docker.internal:11434`，本地开发可用 `http://localhost:11434`。
 
 ## 本地开发（pnpm）
 
@@ -144,8 +140,6 @@ docker compose up -d --build
 ```bash
 pnpm install
 ```
-
-若曾遇到 `recharts` 安装阶段执行 `husky` 报错，本项目已通过 `patches/recharts@3.8.0.patch` 处理；请始终使用根目录 `pnpm install`。
 
 ### 2. 配置环境
 
@@ -160,14 +154,9 @@ cp .env.example .env
 `pnpm dev` 在宿主机启动 API 时，`apps/api/scripts/dev.sh` 会把 Compose 风格主机名自动映射到本机：
 
 - `POSTGRES_SERVER=db` → `localhost:5432`
-- `CHROMA_DB_HOST=chromadb` → `localhost:8001`
+- 本机开发请用 `CHROMA_URL=http://127.0.0.1:28100`（勿用 `localhost`，macOS 上易 IPv6/IPv4 不一致导致 502）
+- `CHROMA_URL` 含 `chromadb` / `localhost` 时，`dev.sh` 自动改为 `http://127.0.0.1:28100`
 - `MINIO_ENDPOINT=minio:9000` → `localhost:9000`
-
-请先启动 Postgres、Chroma、MinIO，例如：
-
-```bash
-docker compose up -d db chromadb minio
-```
 
 ### 4. Python 虚拟环境
 
@@ -180,13 +169,20 @@ cd ../..
 
 ### 5. 启动开发服务
 
+一条命令会启动本机 Chroma HTTP 服务（`chroma run`，**不启 Docker**），再并行启动前后端。Postgres、MinIO 需在你本机已运行（`.env` 里 `localhost`）。
+
 ```bash
 pnpm dev
 ```
 
+Chroma 默认 `http://localhost:28100`（与 API 的 8000 分离，避免 macOS 上 `localhost:8000` 解析到 Chroma），数据目录 `./chroma_data`。API 通过 HTTP 连接 Chroma。
+
 | 命令 | 说明 |
 |------|------|
-| `pnpm dev` | Turborepo 并行启动前后端 |
+| `pnpm dev` | 本机 Chroma HTTP + 前后端 |
+| `pnpm dev:chroma` | 仅启动本机 `chroma run` |
+| `pnpm dev:chroma:stop` | 停止 `pnpm dev` 拉起的 Chroma 进程 |
+| `pnpm dev:app` | 仅前后端（Chroma 需已运行） |
 | `pnpm build` | 生产构建 |
 | `pnpm lint` | 静态检查 |
 | `pnpm test` / `pnpm test:ci` | 测试 |
@@ -200,8 +196,7 @@ rag-web-ui/
 ├── apps/
 │   ├── api/          # FastAPI 后端、Alembic 迁移、业务服务
 │   └── web/          # Next.js 前端（i18n、Dashboard）
-├── docs/             # 教程、排错、部署博文
-├── patches/          # pnpm 依赖补丁
+├── docs/images/      # README 封面与截图资源
 ├── docker-compose.yml
 ├── docker-compose.dev.yml
 ├── docker-compose.prod.yml
@@ -223,7 +218,7 @@ rag-web-ui/
 
 ## 配置说明
 
-复制 `.env.example` 后，按场景填写。生产环境可参考 `.env.production.example`。
+复制 `.env.example` 为 `.env`（本地）或 `.env.production`（`./deploy.sh` 部署），按注释填写。
 
 ### 对话模型（`CHAT_PROVIDER`）
 
@@ -241,14 +236,14 @@ rag-web-ui/
 |------|------|
 | `openai` | OpenAI Embedding |
 | `ollama` | 本地模型（如 `bge-m3`、`nomic-embed-text`） |
-| `huggingface` | HuggingFace 模型，见 [HUGGINGFACE_EMBEDDINGS.md](docs/HUGGINGFACE_EMBEDDINGS.md) |
+| `huggingface` | HuggingFace 模型，配置 `EMBEDDINGS_MODEL`（见 `.env.example`） |
 | `dashscope` | 阿里云 DashScope |
 
 DeepSeek **不提供** Embedding API，请搭配 `ollama`、`openai` 或 `huggingface`。
 
 ### 向量库（`VECTOR_STORE_TYPE`）
 
-- `chroma`（默认）：`CHROMA_MODE=http` 时连 Chroma 服务；本地可无 Docker 使用 `persistent` 模式
+- `chroma`（默认）：`pnpm dev` 本机 `chroma run`（HTTP，无容器）
 - `qdrant`：取消 `docker-compose.yml` 中 qdrant 服务注释并配置 `QDRANT_URL`
 
 更多变量说明见根目录 **`.env.example`** 内注释。
@@ -257,22 +252,16 @@ DeepSeek **不提供** Embedding API，请搭配 `ollama`、`openai` 或 `huggin
 
 | 方式 | 说明 |
 |------|------|
-| `docker compose -f docker-compose.prod.yml` | 生产前后端镜像 |
-| `./deploy.sh` | 将代码 rsync 到远程主机并用 prod compose 构建启动（需配置 `REMOTE_HOST`、`REMOTE_DIR`、`.env.production`） |
+| `docker-compose.chroma.yml` | 生产 Chroma HTTP 独立容器，数据目录 `./chroma_data`（`deploy.sh` 会自动 `up -d`） |
+| `docker compose -f docker-compose.prod.yml` | 生产前后端镜像（不再挂载 chroma_data 到 backend） |
+| `./deploy.sh` | rsync + 启动 Chroma + 构建/启动前后端 + alembic（见 `.env.production`） |
 | `Dockerfile.frontend` | 前端生产镜像（构建上下文为仓库根目录） |
 
-部署前请修改 **`SECRET_KEY`**、数据库密码、MinIO 密钥，并设置 `API_BASE_URL` / `WEB_BASE_URL` / `CORS_ALLOWED_ORIGINS`（见 `.env.production.example`）。
+生产 Chroma：`CHROMA_URL=http://host.docker.internal:28100`。向量数据在服务器 **`chroma_data/`**，`deploy.sh` 不会 rsync 覆盖该目录。
 
-## 文档索引
+部署前请修改 **`SECRET_KEY`**、数据库密码、MinIO 密钥，并设置 `API_BASE_URL` / `WEB_BASE_URL` / `CORS_ALLOWED_ORIGINS`（见 `.env.example` 生产相关注释）。
 
-| 文档 | 内容 |
-|------|------|
-| [docs/troubleshooting.md](docs/troubleshooting.md) | 安装、数据库、依赖等排错 |
-| [docs/blog/deploy-local.md](docs/blog/deploy-local.md) | Ollama + Docker 本地部署 walkthrough |
-| [docs/tutorial/README.md](docs/tutorial/README.md) | RAG 全流程教程 |
-| [docs/HUGGINGFACE_EMBEDDINGS.md](docs/HUGGINGFACE_EMBEDDINGS.md) | HuggingFace Embedding 配置 |
-| [docs/OLLAMA_EMBEDDINGS.md](docs/OLLAMA_EMBEDDINGS.md) | Ollama 向量模型说明 |
-| [README.zh-CN.md](README.zh-CN.md) | 更完整的中文说明（特性列表、架构图、配置表） |
+更完整的中文说明（特性列表、架构图、配置表）见 [README.zh-CN.md](README.zh-CN.md)。
 
 ## 许可证与致谢
 

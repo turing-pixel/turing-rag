@@ -29,11 +29,17 @@ export function getApiBase(): string {
   }
   if (typeof window !== "undefined") {
     const port = process.env.NEXT_PUBLIC_BACKEND_PORT || "8000";
+    // Prefer 127.0.0.1 when the page is on localhost: on macOS, localhost:8000
+    // often resolves to IPv6 [::1] where Chroma may listen, not the API on IPv4.
+    const host =
+      window.location.hostname === "localhost"
+        ? "127.0.0.1"
+        : window.location.hostname;
     return upgradeToHttpsIfPageIsSecure(
-      `${window.location.protocol}//${window.location.hostname}:${port}`
+      `${window.location.protocol}//${host}:${port}`
     );
   }
-  return "http://localhost:8000";
+  return "http://127.0.0.1:8000";
 }
 
 /** Public web app origin (e.g. marketing / app shell). */

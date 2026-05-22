@@ -1,6 +1,12 @@
+import uuid
+
 from sqlalchemy import Column, Integer, String, Text, ForeignKey, Boolean, Table
 from sqlalchemy.orm import relationship
 from app.models.base import Base, TimestampMixin
+
+
+def _new_chat_uuid() -> str:
+    return str(uuid.uuid4())
 
 # Association table for many-to-many relationship between Chat and KnowledgeBase
 chat_knowledge_bases = Table(
@@ -14,6 +20,13 @@ class Chat(Base, TimestampMixin):
     __tablename__ = "chats"
 
     id = Column(Integer, primary_key=True, index=True)
+    uuid = Column(
+        String(36),
+        unique=True,
+        nullable=False,
+        default=_new_chat_uuid,
+        index=True,
+    )
     title = Column(String(255), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     llm_provider = Column(String(50), nullable=True)
@@ -38,6 +51,7 @@ class Message(Base, TimestampMixin):
     id = Column(Integer, primary_key=True, index=True)
     content = Column(Text, nullable=False)
     role = Column(String(50), nullable=False)
+    feedback = Column(String(16), nullable=True)
     chat_id = Column(Integer, ForeignKey("chats.id"), nullable=False)
 
     # Relationships

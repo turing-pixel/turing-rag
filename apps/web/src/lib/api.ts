@@ -4,6 +4,8 @@ import { getLoginHrefFromPathname } from "@/lib/locale-path";
 interface FetchOptions extends Omit<RequestInit, 'body' | 'headers'> {
   data?: any;
   headers?: Record<string, string>;
+  /** Do not clear token or hard-redirect on 401 (login/register flows). */
+  skipAuthRedirect?: boolean;
 }
 
 export class ApiError extends Error {
@@ -66,7 +68,12 @@ export async function parseHttpErrorResponse(response: Response): Promise<string
 }
 
 async function fetchApi(path: string, options: FetchOptions = {}) {
-  const { data, headers: customHeaders = {}, ...restOptions } = options;
+  const {
+    data,
+    headers: customHeaders = {},
+    skipAuthRedirect = false,
+    ...restOptions
+  } = options;
 
   const headers: Record<string, string> = {
     ...getAuthHeaders(),
@@ -100,7 +107,9 @@ async function fetchApi(path: string, options: FetchOptions = {}) {
     const response = await fetch(`${getApiBase()}${path}`, config);
 
     if (response.status === 401) {
-      redirectToLoginIfUnauthorized();
+      if (!skipAuthRedirect) {
+        redirectToLoginIfUnauthorized();
+      }
       throw new ApiError(401, 'Unauthorized - Please log in again');
     }
 

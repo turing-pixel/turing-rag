@@ -1,7 +1,5 @@
 from dataclasses import dataclass
 
-from app.core.config import settings
-
 OPENAI_COMPATIBLE_PROVIDERS = frozenset(
     {
         "anthropic",
@@ -30,8 +28,8 @@ PROVIDER_REGISTRY: tuple[ProviderDefinition, ...] = (
     ProviderDefinition(
         id="openai",
         label="OpenAI",
-        default_api_base=settings.OPENAI_API_BASE,
-        default_model=settings.OPENAI_MODEL,
+        default_api_base="https://api.openai.com/v1",
+        default_model="gpt-4o",
         requires_api_key=True,
         factory="openai",
         catalog_models=(
@@ -70,8 +68,8 @@ PROVIDER_REGISTRY: tuple[ProviderDefinition, ...] = (
     ProviderDefinition(
         id="deepseek",
         label="DeepSeek",
-        default_api_base=settings.DEEPSEEK_API_BASE,
-        default_model=settings.DEEPSEEK_MODEL,
+        default_api_base="https://api.deepseek.com",
+        default_model="deepseek-chat",
         requires_api_key=True,
         factory="deepseek",
         catalog_models=(
@@ -108,8 +106,8 @@ PROVIDER_REGISTRY: tuple[ProviderDefinition, ...] = (
     ProviderDefinition(
         id="minimax",
         label="MiniMax",
-        default_api_base=settings.MINIMAX_API_BASE,
-        default_model=settings.MINIMAX_MODEL,
+        default_api_base="https://api.minimax.io/v1",
+        default_model="MiniMax-M2.7",
         requires_api_key=True,
         factory="minimax",
         catalog_models=(
@@ -154,8 +152,8 @@ PROVIDER_REGISTRY: tuple[ProviderDefinition, ...] = (
     ProviderDefinition(
         id="ollama",
         label="Ollama",
-        default_api_base=settings.OLLAMA_API_BASE,
-        default_model=settings.OLLAMA_MODEL,
+        default_api_base="http://localhost:11434",
+        default_model="llama3.2",
         requires_api_key=False,
         factory="ollama",
         catalog_models=(),

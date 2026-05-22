@@ -3,25 +3,23 @@ from typing import List, Optional
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
+from app.core.chat_env import (
+    chat_provider_id,
+    is_chat_env_configured,
+    resolve_chat_credentials,
+)
 from app.models.llm_config import LlmConfig
 from app.services.llm.llm_config_service import (
     ResolvedLlmRuntime,
     get_user_default_config,
     resolve_runtime_config,
 )
+from app.services.user_preference_service import is_llm_env_default
 from app.services.llm.provider_registry import (
     SUPPORTED_LLM_PROVIDERS,
     get_provider_definition,
     list_provider_definitions,
 )
-
-_PLACEHOLDER_KEYS = {
-    "your-openai-api-key-here",
-    "your-deepseek-api-key-here",
-    "your-minimax-api-key-here",
-}
-
 
 class LlmModelOption(BaseModel):
     provider: str
@@ -37,36 +35,6 @@ class LlmProviderOption(BaseModel):
     models: List[LlmModelOption]
 
 
-def _has_api_key(key: str) -> bool:
-    value = (key or "").strip()
-    return bool(value) and value not in _PLACEHOLDER_KEYS
-
-
-def _provider_configured(provider: str) -> bool:
-    provider = provider.lower()
-    if provider == "openai":
-        return _has_api_key(settings.OPENAI_API_KEY)
-    if provider == "deepseek":
-        return _has_api_key(settings.DEEPSEEK_API_KEY)
-    if provider == "minimax":
-        return _has_api_key(settings.MINIMAX_API_KEY)
-    if provider == "ollama":
-        return bool((settings.OLLAMA_API_BASE or "").strip())
-    return False
-
-
-def _catalog_models(provider: str) -> list[tuple[str, str]]:
-    definition = get_provider_definition(provider)
-    if not definition:
-        return []
-
-    catalog = list(definition.catalog_models)
-    default_model = definition.default_model
-    if default_model and not any(model_id == default_model for model_id, _ in catalog):
-        catalog.insert(0, (default_model, default_model))
-    return catalog
-
-
 def get_default_llm_config(
     db: Optional[Session] = None, user_id: Optional[int] = None
 ) -> tuple[str, str]:
@@ -75,68 +43,62 @@ def get_default_llm_config(
         if default_config:
             return default_config.provider, default_config.model
 
-    for definition in list_provider_definitions():
-        if _provider_configured(definition.id):
-            return definition.id, definition.default_model
+        if is_llm_env_default(db, user_id):
+            provider = chat_provider_id()
+            if is_chat_env_configured(provider):
+                creds = resolve_chat_credentials(provider)
+                if creds.model:
+                    return creds.provider, creds.model
 
-    fallback = get_provider_definition((settings.CHAT_PROVIDER or "openai").lower())
+    provider = chat_provider_id()
+    if is_chat_env_configured(provider):
+        creds = resolve_chat_credentials(provider)
+        if creds.model:
+            return creds.provider, creds.model
+
+    fallback = get_provider_definition(provider)
     if fallback:
         return fallback.id, fallback.default_model
-    return "openai", settings.OPENAI_MODEL
+    return provider, "gpt-4"
 
 
-def _providers_from_env() -> List[LlmProviderOption]:
-    providers: List[LlmProviderOption] = []
-    default_provider, default_model = get_default_llm_config()
+def _providers_from_env(
+    db: Optional[Session] = None, user_id: Optional[int] = None
+) -> List[LlmProviderOption]:
+    """Expose the active CHAT_PROVIDER from unified CHAT_* (or legacy) env vars."""
+    provider = chat_provider_id()
+    if not is_chat_env_configured(provider):
+        return []
 
-    for definition in list_provider_definitions():
-        if not _provider_configured(definition.id):
-            continue
+    creds = resolve_chat_credentials(provider)
+    if not creds.model:
+        return []
 
-        model_entries = _catalog_models(definition.id)
-        models: List[LlmModelOption] = []
-        seen: set[str] = set()
-        for model_id, label in model_entries:
-            if model_id in seen:
-                continue
-            seen.add(model_id)
-            models.append(
+    definition = get_provider_definition(provider)
+    label = definition.label if definition else provider
+    default_provider, default_model = get_default_llm_config(db, user_id)
+
+    return [
+        LlmProviderOption(
+            provider=provider,
+            label=label,
+            models=[
                 LlmModelOption(
-                    provider=definition.id,
-                    model=model_id,
-                    label=label,
-                    is_default=(
-                        definition.id == default_provider and model_id == default_model
-                    ),
+                    provider=provider,
+                    model=creds.model,
+                    label=creds.model,
+                    is_default=provider == default_provider and creds.model == default_model,
                 )
-            )
-
-        if definition.id == "ollama" and not models:
-            models.append(
-                LlmModelOption(
-                    provider=definition.id,
-                    model=definition.default_model,
-                    label=definition.default_model,
-                    is_default=definition.id == default_provider,
-                )
-            )
-
-        providers.append(
-            LlmProviderOption(
-                provider=definition.id,
-                label=definition.label,
-                models=models,
-            )
+            ],
         )
-
-    return providers
+    ]
 
 
 def _providers_from_db(db: Session, user_id: int) -> List[LlmProviderOption]:
     configs = (
         db.query(LlmConfig)
         .filter(LlmConfig.user_id == user_id, LlmConfig.is_active.is_(True))
-        .order_by(LlmConfig.is_default.desc(), LlmConfig.name.asc())
+        .order_by(LlmConfig.name.asc())
         .all()
     )
     if not configs:
@@ -166,14 +128,102 @@ def _providers_from_db(db: Session, user_id: int) -> List[LlmProviderOption]:
     return list(grouped.values())
 
 
+def _db_model_keys(providers: List[LlmProviderOption]) -> set[tuple[str, str]]:
+    keys: set[tuple[str, str]] = set()
+    for provider in providers:
+        for model in provider.models:
+            if model.config_id is not None:
+                keys.add((provider.provider, model.model))
+    return keys
+
+
+def _merge_providers(
+    db_providers: List[LlmProviderOption], env_providers: List[LlmProviderOption]
+) -> List[LlmProviderOption]:
+    """Merge user DB configs with environment-backed catalog; DB entries take precedence."""
+    if not db_providers:
+        return env_providers
+    if not env_providers:
+        return db_providers
+
+    db_keys = _db_model_keys(db_providers)
+    has_db_default = any(
+        model.is_default
+        for provider in db_providers
+        for model in provider.models
+        if model.config_id is not None
+    )
+
+    merged: dict[str, LlmProviderOption] = {
+        provider.provider: LlmProviderOption(
+            provider=provider.provider,
+            label=provider.label,
+            models=list(provider.models),
+        )
+        for provider in db_providers
+    }
+
+    for env_provider in env_providers:
+        if env_provider.provider not in merged:
+            env_models = list(env_provider.models)
+            if has_db_default:
+                env_models = [
+                    LlmModelOption(
+                        provider=model.provider,
+                        model=model.model,
+                        label=model.label,
+                        is_default=False,
+                        config_id=model.config_id,
+                    )
+                    for model in env_models
+                ]
+            merged[env_provider.provider] = LlmProviderOption(
+                provider=env_provider.provider,
+                label=env_provider.label,
+                models=env_models,
+            )
+            continue
+
+        target = merged[env_provider.provider]
+        existing_models = {model.model for model in target.models}
+        for env_model in env_provider.models:
+            if (env_provider.provider, env_model.model) in db_keys:
+                continue
+            if env_model.model in existing_models:
+                continue
+            target.models.append(
+                LlmModelOption(
+                    provider=env_model.provider,
+                    model=env_model.model,
+                    label=env_model.label,
+                    is_default=False if has_db_default else env_model.is_default,
+                    config_id=None,
+                )
+            )
+            existing_models.add(env_model.model)
+
+    return list(merged.values())
+
+
 def get_available_llm_providers(
     db: Optional[Session] = None, user_id: Optional[int] = None
 ) -> List[LlmProviderOption]:
+    env_providers = _providers_from_env(db, user_id)
     if db is not None and user_id is not None:
         db_providers = _providers_from_db(db, user_id)
-        if db_providers:
-            return db_providers
-    return _providers_from_env()
+        return _merge_providers(db_providers, env_providers)
+    return env_providers
+
+
+def _allowed_models_for_provider(
+    providers: List[LlmProviderOption], provider: str
+) -> set[str]:
+    return {
+        model.model
+        for item in providers
+        if item.provider == provider
+        for model in item.models
+    }
 
 
 def validate_llm_config(
@@ -212,26 +262,22 @@ def validate_llm_config(
         raise ValueError(f"Unsupported LLM provider: {resolved_provider}")
 
     if db is not None and user_id is not None:
-        allowed_models = {
-            option.model
-            for option in get_available_llm_providers(db, user_id)
-            for option in option.models
-        }
+        providers = get_available_llm_providers(db, user_id)
+        allowed_models = _allowed_models_for_provider(providers, resolved_provider)
         if allowed_models and resolved_model not in allowed_models:
             raise ValueError(
                 f"Model '{resolved_model}' is not available for provider '{resolved_provider}'"
             )
         return resolved_provider, resolved_model
 
-    if not _provider_configured(resolved_provider):
+    from app.core.chat_env import is_chat_env_configured
+
+    if not is_chat_env_configured(resolved_provider):
         raise ValueError(f"LLM provider is not configured: {resolved_provider}")
 
-    allowed_models = {
-        option.model
-        for option in get_available_llm_providers()
-        if option.provider == resolved_provider
-        for option in option.models
-    }
+    allowed_models = _allowed_models_for_provider(
+        get_available_llm_providers(), resolved_provider
+    )
     if allowed_models and resolved_model not in allowed_models:
         raise ValueError(
             f"Model '{resolved_model}' is not available for provider '{resolved_provider}'"

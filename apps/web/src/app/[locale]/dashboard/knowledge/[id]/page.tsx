@@ -9,9 +9,8 @@ import { DocumentList } from "@/components/knowledge-base/document-list";
 import { useDocumentUpload } from "@/components/knowledge-base/document-upload-provider";
 import { Button } from "@/components/ui/button";
 import { api, ApiError } from "@/lib/api";
-import { startChatWithKnowledgeBase } from "@/lib/start-chat";
-import { Loader2, MessageSquare, PlusIcon } from "lucide-react";
-import DashboardLayout from "@/components/layout/dashboard-layout";
+import { chatUrlWithKnowledgeBases } from "@/lib/start-chat";
+import { MessageSquare, PlusIcon } from "lucide-react";
 import { DashboardPageContainer } from "@/components/layout/dashboard-page-container";
 
 export default function KnowledgeBasePage() {
@@ -21,7 +20,6 @@ export default function KnowledgeBasePage() {
   const tToasts = useTranslations("toasts");
   const knowledgeBaseId = parseInt(params.id as string);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [isStartingChat, setIsStartingChat] = useState(false);
   const { openDocumentUpload, registerDocumentUploadComplete } =
     useDocumentUpload();
 
@@ -35,27 +33,12 @@ export default function KnowledgeBasePage() {
     setRefreshKey((prev) => prev + 1);
   }, []);
 
-  const handleStartChat = useCallback(async () => {
-    setIsStartingChat(true);
-    try {
-      const kb = await api.get(`/api/knowledge-base/${knowledgeBaseId}`);
-      const data = await startChatWithKnowledgeBase(kb);
-      router.push(`/dashboard/chat/${data.id}`);
-    } catch (error) {
-      console.error("Failed to start chat:", error);
-      if (error instanceof ApiError) {
-        toast.error(error.message);
-      } else {
-        toast.error(tToasts("chatStartError"));
-      }
-    } finally {
-      setIsStartingChat(false);
-    }
-  }, [knowledgeBaseId, router, tToasts]);
+  const handleStartChat = useCallback(() => {
+    router.push(chatUrlWithKnowledgeBases(knowledgeBaseId));
+  }, [knowledgeBaseId, router]);
 
   return (
-    <DashboardLayout>
-      <DashboardPageContainer className="space-y-8">
+    <DashboardPageContainer className="space-y-8">
         <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-2xl font-semibold tracking-tight">
             {t("detailHeading")}
@@ -65,14 +48,9 @@ export default function KnowledgeBasePage() {
               type="button"
               variant="outline"
               className="gap-2"
-              disabled={isStartingChat}
-              onClick={() => void handleStartChat()}
+              onClick={handleStartChat}
             >
-              {isStartingChat ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <MessageSquare className="h-4 w-4" />
-              )}
+              <MessageSquare className="h-4 w-4" />
               {t("enterChat")}
             </Button>
             <Button
@@ -91,7 +69,6 @@ export default function KnowledgeBasePage() {
         </header>
 
         <DocumentList key={refreshKey} knowledgeBaseId={knowledgeBaseId} />
-      </DashboardPageContainer>
-    </DashboardLayout>
+    </DashboardPageContainer>
   );
 }

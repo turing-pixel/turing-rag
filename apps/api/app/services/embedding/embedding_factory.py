@@ -1,4 +1,10 @@
-from app.core.config import settings
+from typing import Optional
+
+from app.core.embedding_env import (
+    embeddings_provider_id,
+    resolve_embedding_credentials,
+)
+from app.services.embedding.embedding_config_service import ResolvedEmbeddingRuntime
 from app.services.embedding.ollama_embedding import (
     create_ollama_embeddings,
     format_ollama_embedding_models_help,
@@ -10,43 +16,50 @@ from langchain_huggingface import HuggingFaceEmbeddings
 
 class EmbeddingsFactory:
     @staticmethod
-    def create():
+    def create(runtime: Optional[ResolvedEmbeddingRuntime] = None):
         """
-        Factory method to create an embeddings instance based on .env config.
-
-        Ollama embeddings: set EMBEDDINGS_PROVIDER=ollama and OLLAMA_EMBEDDINGS_MODEL
-        to bge-m3 or nomic-embed-text (see ollama_embedding.OLLAMA_EMBEDDING_MODELS).
+        Create an embeddings instance from a user DB config or .env defaults.
         """
-        embeddings_provider = settings.EMBEDDINGS_PROVIDER.lower()
+        if runtime is not None:
+            embeddings_provider = runtime.provider.lower()
+            creds = resolve_embedding_credentials(embeddings_provider)
+            model = runtime.model or creds.model
+            api_key = runtime.api_key or creds.api_key
+            api_base = runtime.api_base or creds.api_base
+        else:
+            embeddings_provider = embeddings_provider_id()
+            creds = resolve_embedding_credentials(embeddings_provider)
+            model = creds.model
+            api_key = creds.api_key
+            api_base = creds.api_base
 
         if embeddings_provider == "openai":
             return OpenAIEmbeddings(
-                openai_api_key=settings.OPENAI_API_KEY,
-                openai_api_base=settings.OPENAI_API_BASE,
-                model=settings.OPENAI_EMBEDDINGS_MODEL
+                openai_api_key=api_key,
+                openai_api_base=api_base,
+                model=model,
             )
-        elif embeddings_provider == "dashscope":
+        if embeddings_provider == "dashscope":
             return DashScopeEmbeddings(
-                model=settings.DASH_SCOPE_EMBEDDINGS_MODEL,
-                dashscope_api_key=settings.DASH_SCOPE_API_KEY
+                model=model,
+                dashscope_api_key=api_key,
             )
-        elif embeddings_provider == "ollama":
-            if not settings.OLLAMA_EMBEDDINGS_MODEL:
+        if embeddings_provider == "ollama":
+            if not model:
                 raise ValueError(
-                    "OLLAMA_EMBEDDINGS_MODEL is required when EMBEDDINGS_PROVIDER=ollama.\n"
+                    "EMBEDDINGS_MODEL is required when EMBEDDINGS_PROVIDER=ollama.\n"
                     + format_ollama_embedding_models_help()
                 )
             return create_ollama_embeddings(
-                model=settings.OLLAMA_EMBEDDINGS_MODEL,
-                base_url=settings.OLLAMA_API_BASE,
+                model=model,
+                base_url=api_base,
             )
-        elif embeddings_provider == "huggingface":
+        if embeddings_provider == "huggingface":
             model_kwargs = {}
-            if settings.HUGGINGFACE_API_KEY:
-                model_kwargs["token"] = settings.HUGGINGFACE_API_KEY
+            if api_key:
+                model_kwargs["token"] = api_key
             return HuggingFaceEmbeddings(
-                model_name=settings.HUGGINGFACE_EMBEDDINGS_MODEL,
-                model_kwargs=model_kwargs
+                model_name=model,
+                model_kwargs=model_kwargs,
             )
-        else:
-            raise ValueError(f"Unsupported embeddings provider: {embeddings_provider}")
+        raise ValueError(f"Unsupported embeddings provider: {embeddings_provider}")

@@ -29,7 +29,7 @@ ollama --version
 我们需要两个模型：
 
 - deepseek-r1:7b 用于对话生成
-- 向量模型二选一（在 `.env` 里通过 `OLLAMA_EMBEDDINGS_MODEL` 配置）：
+- 向量模型二选一（在 `.env` 里通过 `EMBEDDINGS_MODEL` 配置）：
   - **bge-m3**（推荐，多语言、中文效果更好，约 1.2GB）
   - **nomic-embed-text**（更轻量、更快，约 274MB）
 
@@ -71,13 +71,13 @@ OLLAMA_API_BASE=http://host.docker.internal:11434
 OLLAMA_MODEL=deepseek-r1:7b
 # Embedding 配置
 EMBEDDINGS_PROVIDER=ollama
-OLLAMA_EMBEDDINGS_MODEL=bge-m3
-# OLLAMA_EMBEDDINGS_MODEL=nomic-embed-text
+EMBEDDINGS_API_BASE=http://localhost:11434
+EMBEDDINGS_MODEL=bge-m3
+# EMBEDDINGS_MODEL=nomic-embed-text
 
 # 向量数据库配置
 VECTOR_STORE_TYPE=chroma
-CHROMA_DB_HOST=chromadb
-CHROMA_DB_PORT=8000
+CHROMA_URL=http://chromadb:8000
 
 # MySQL 配置
 MYSQL_SERVER=db

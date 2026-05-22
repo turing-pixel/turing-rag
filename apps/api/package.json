@@ -3,6 +3,8 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "dev": "sh scripts/dev.sh"
+    "dev": "sh scripts/dev.sh",
+    "reset-data": "sh scripts/reset_data.sh",
+    "reset-data:dry-run": "sh scripts/reset_data.sh --dry-run"
   }
 }

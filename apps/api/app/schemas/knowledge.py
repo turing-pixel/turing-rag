@@ -85,7 +85,7 @@ class ProcessingTaskCreate(ProcessingTaskBase):
 
 class ProcessingTask(ProcessingTaskBase):
     id: int
-    document_id: int
+    document_id: Optional[int] = None
     knowledge_base_id: int
     created_at: datetime
     updated_at: datetime
@@ -102,6 +102,10 @@ class DocumentResponse(DocumentBase):
 
     class Config:
         from_attributes = True
+
+
+class DocumentDetailResponse(DocumentResponse):
+    chunk_count: int = 0
 
 class KnowledgeBaseResponse(KnowledgeBaseBase):
     id: int

@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { Plus, Copy, Check, List, KeyRound } from "lucide-react";
 import { toast } from "sonner";
-import DashboardLayout from "@/components/layout/dashboard-layout";
 import { DashboardPageContainer } from "@/components/layout/dashboard-page-container";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -146,8 +145,7 @@ export default function APIKeysPage() {
   };
 
   return (
-    <DashboardLayout>
-      <DashboardPageContainer>
+    <DashboardPageContainer>
         <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-2xl font-semibold tracking-tight">{t("title")}</h1>
           <div className="flex flex-wrap gap-2">
@@ -353,7 +351,6 @@ export default function APIKeysPage() {
             </Table>
           </div>
         )}
-      </DashboardPageContainer>
-    </DashboardLayout>
+    </DashboardPageContainer>
   );
 }

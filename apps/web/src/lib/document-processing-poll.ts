@@ -1,7 +1,7 @@
 import { api } from "@/lib/api";
 
-/** Poll interval with real progress from the API (seconds-scale updates are enough). */
-export const PROCESSING_POLL_INTERVAL_MS = 4000;
+/** Poll interval; keep short so UI tracks backend progress commits. */
+export const PROCESSING_POLL_INTERVAL_MS = 1000;
 
 export type ProcessingTaskStatus = {
   document_id: number | null;
@@ -125,9 +125,15 @@ export function runProcessingPoll({
       statusPollRetries = 0;
       onUpdate?.(data);
 
-      const allDone = Object.values(data).every(
-        (task) => task.status === "completed" || task.status === "failed"
-      );
+      const allDone =
+        taskIds.length > 0 &&
+        taskIds.every((id) => {
+          const task = data[id];
+          return (
+            task != null &&
+            (task.status === "completed" || task.status === "failed")
+          );
+        });
 
       if (allDone) {
         const failedTasks = Object.values(data).filter(

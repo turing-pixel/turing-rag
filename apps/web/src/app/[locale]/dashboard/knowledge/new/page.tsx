@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useRouter } from "@/i18n/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import DashboardLayout from "@/components/layout/dashboard-layout";
 import { DashboardPageContainer } from "@/components/layout/dashboard-page-container";
 import {
   KnowledgeBaseIconField,
@@ -60,8 +59,7 @@ export default function NewKnowledgeBasePage() {
   };
 
   return (
-    <DashboardLayout>
-      <DashboardPageContainer className="space-y-8">
+    <DashboardPageContainer className="space-y-8">
         <header className="space-y-1">
           <h1 className="text-2xl font-semibold tracking-tight">
             {tKb("createPageTitle")}
@@ -114,7 +112,6 @@ export default function NewKnowledgeBasePage() {
             </Button>
           </div>
         </form>
-      </DashboardPageContainer>
-    </DashboardLayout>
+    </DashboardPageContainer>
   );
 }

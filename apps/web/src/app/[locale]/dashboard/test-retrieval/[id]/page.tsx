@@ -6,7 +6,6 @@ import { Badge } from "@/components/ui/badge";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
-import DashboardLayout from "@/components/layout/dashboard-layout";
 import { DashboardPageContainer } from "@/components/layout/dashboard-page-container";
 import { ArrowRight, ChevronDown, Search } from "lucide-react";
 import {
@@ -61,7 +60,7 @@ function RetrievalResultItem({
 }) {
   return (
     <Collapsible defaultOpen={false}>
-      <Item variant="outline">
+    <Item variant="outline">
         <ItemContent>
           <CollapsibleTrigger
             aria-label={t("resultToggleAria")}
@@ -89,7 +88,7 @@ function RetrievalResultItem({
             </p>
           </CollapsibleContent>
         </ItemContent>
-      </Item>
+    </Item>
     </Collapsible>
   );
 }
@@ -155,8 +154,7 @@ export default function TestPage({
   };
 
   return (
-    <DashboardLayout>
-      <DashboardPageContainer className="space-y-8" aria-busy={isKbLoading}>
+    <DashboardPageContainer className="space-y-8" aria-busy={isKbLoading}>
         {isKbLoading ? (
           <TestRetrievalPageSkeleton />
         ) : (
@@ -243,7 +241,6 @@ export default function TestPage({
         ) : null}
           </>
         )}
-      </DashboardPageContainer>
-    </DashboardLayout>
+    </DashboardPageContainer>
   );
 }

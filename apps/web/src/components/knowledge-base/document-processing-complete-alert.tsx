@@ -41,7 +41,7 @@ export function DocumentProcessingCompleteAlert({
 
   return (
     <AlertDialog open={state.open} onOpenChange={onOpenChange}>
-      <AlertDialogContent size="default" className="sm:max-w-md">
+      <AlertDialogContent size="default" className="sm:max-w-lg">
         <AlertDialogHeader>
           <AlertDialogMedia
             className={
@@ -58,16 +58,21 @@ export function DocumentProcessingCompleteAlert({
           </AlertDialogMedia>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription asChild>
-            <div className="space-y-3 text-left">
-              <p>{description}</p>
+            <div className="w-full space-y-3 text-left">
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                {description}
+              </p>
               {!isSuccess && state.failedFileNames.length > 0 && (
-                <div className="rounded-md border bg-muted/40 px-3 py-2">
-                  <p className="mb-1.5 text-xs font-medium text-foreground">
+                <div className="overflow-hidden rounded-lg border border-destructive/15 bg-destructive/4">
+                  <p className="border-b border-destructive/10 px-3 py-2 text-xs font-medium text-foreground">
                     {tPage("processingFailedFilesLabel")}
                   </p>
-                  <ul className="max-h-32 list-inside list-disc space-y-0.5 overflow-y-auto text-xs text-muted-foreground">
-                    {state.failedFileNames.map((name) => (
-                      <li key={name} className="truncate">
+                  <ul className="max-h-40 divide-y divide-border/50 overflow-y-auto">
+                    {state.failedFileNames.map((name, index) => (
+                      <li
+                        key={`${name}-${index}`}
+                        className="px-3 py-2 text-xs leading-relaxed wrap-break-word text-muted-foreground"
+                      >
                         {name}
                       </li>
                     ))}

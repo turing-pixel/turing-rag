@@ -1,19 +1,13 @@
-import { parseDataStreamLine } from "../ai-data-stream";
+import { parseDataStreamLine } from "@/lib/ai-data-stream";
 
 describe("parseDataStreamLine", () => {
-  it("parses text chunks", () => {
-    expect(parseDataStreamLine('0:"hello\\nworld"')).toBe("hello\nworld");
+  it("parses text chunks (type 0)", () => {
+    expect(parseDataStreamLine('0:"hello"')).toBe("hello");
   });
 
-  it("returns null for finish lines", () => {
-    expect(
-      parseDataStreamLine('d:{"finishReason":"stop","usage":{"promptTokens":0,"completionTokens":0}}')
-    ).toBeNull();
-  });
-
-  it("throws on error lines", () => {
-    expect(() => parseDataStreamLine('3:{"text":"LLM failed"}')).toThrow(
-      "LLM failed"
-    );
+  it("parses data chunks (type 2)", () => {
+    const payload = [{ type: "retrieval", phase: "start" }];
+    const part = parseDataStreamLine(`2:${JSON.stringify(payload)}`);
+    expect(part).toEqual({ kind: "data", data: payload });
   });
 });

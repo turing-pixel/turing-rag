@@ -7,16 +7,15 @@ cd "$ROOT"
 # the host (pnpm dev), those names do not resolve; export localhost overrides before
 # Python loads pydantic-settings (env vars beat .env file).
 if [ ! -f /.dockerenv ]; then
+  export ENVIRONMENT="${ENVIRONMENT:-development}"
   if [ "${POSTGRES_SERVER:-db}" = "db" ]; then
     export POSTGRES_SERVER=localhost
   fi
-  if [ "${CHROMA_DB_HOST:-chromadb}" = "chromadb" ]; then
-    export CHROMA_DB_HOST=localhost
-    # docker-compose.yml maps chromadb container port 8000 -> host 8001
-    if [ "${CHROMA_DB_PORT:-8000}" = "8000" ]; then
-      export CHROMA_DB_PORT=8001
-    fi
-  fi
+  case "${CHROMA_URL:-}" in
+    *chromadb*|*localhost*)
+      export CHROMA_URL="http://127.0.0.1:28100"
+      ;;
+  esac
   # Compose service name minio; host-native API should hit your real MinIO listen address.
   case "${MINIO_ENDPOINT:-}" in
     minio:*)

@@ -4,7 +4,6 @@ import { useMemo } from "react";
 import { useTranslations } from "next-intl";
 import { useDocumentUpload } from "@/components/knowledge-base/document-upload-provider";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
 
 function averageProgress(
@@ -45,26 +44,25 @@ export function DocumentUploadActivityButton({
     return null;
   }
 
-  const label =
-    progress != null && progress > 0
-      ? t("viewProcessingUploadWithProgress", { percent: progress })
-      : t("viewProcessingUpload");
+  const showPercent = progress != null && progress > 0;
+  const label = showPercent
+    ? t("viewProcessingUploadWithProgress", { percent: progress })
+    : t("viewProcessingUpload");
 
   return (
-    <div className={className}>
-      <Button
-        type="button"
-        variant={isUploadDialogOpen ? "default" : "outline"}
-        size="icon-sm"
-        title={label}
-        aria-label={label}
-        onClick={openProcessingDialog}
-      >
-        <Spinner aria-hidden />
-      </Button>
-      {progress != null && progress > 0 ? (
-        <Badge variant="secondary">{progress}%</Badge>
+    <Button
+      type="button"
+      variant={isUploadDialogOpen ? "default" : "outline"}
+      size={showPercent ? "default" : "icon"}
+      className={className}
+      title={label}
+      aria-label={label}
+      onClick={openProcessingDialog}
+    >
+      <Spinner aria-hidden />
+      {showPercent ? (
+        <span className="tabular-nums">{progress}%</span>
       ) : null}
-    </div>
+    </Button>
   );
 }

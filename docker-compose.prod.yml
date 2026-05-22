@@ -3,7 +3,8 @@
 #   - Ollama: on the host -> backend uses OLLAMA_API_BASE=http://host.docker.internal:11434
 #   - MinIO: separate Docker container with -p 9000:9000 on host -> MINIO_ENDPOINT=host.docker.internal:9000
 #   - PostgreSQL: on the host -> POSTGRES_SERVER=host.docker.internal
-# Chroma: persistent mode on volume ./chroma_data -> /data/chroma
+#   - Chroma: separate container (docker-compose.chroma.yml), data in ./chroma_data
+#     -> CHROMA_URL=http://host.docker.internal:28100
 services:
   backend:
     build: ./apps/api
@@ -13,7 +14,6 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./uploads:/app/uploads
-      - ./chroma_data:/data/chroma
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     restart: unless-stopped

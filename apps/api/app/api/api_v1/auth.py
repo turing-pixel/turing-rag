@@ -1,9 +1,9 @@
 from datetime import timedelta
 from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-from requests.exceptions import RequestException
 
 from app.core import security
 from app.core.security import get_current_user
@@ -12,6 +12,7 @@ from app.db.session import get_db
 from app.models.user import User
 from app.schemas.token import Token
 from app.schemas.user import UserCreate, UserResponse
+from app.services.user_preference_service import get_or_create_preferences
 
 router = APIRouter()
 
@@ -20,38 +21,30 @@ def register(*, db: Session = Depends(get_db), user_in: UserCreate) -> Any:
     """
     Register a new user.
     """
-    try:
-        # Check if user with this email exists
-        user = db.query(User).filter(User.email == user_in.email).first()
-        if user:
-            raise HTTPException(
-                status_code=400,
-                detail="A user with this email already exists.",
-            )
-        
-        # Check if user with this username exists
-        user = db.query(User).filter(User.username == user_in.username).first()
-        if user:
-            raise HTTPException(
-                status_code=400,
-                detail="A user with this username already exists.",
-            )
-        
-        # Create new user
-        user = User(
-            email=user_in.email,
-            username=user_in.username,
-            hashed_password=security.get_password_hash(user_in.password),
-        )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-        return user
-    except RequestException as e:
+    user = db.query(User).filter(User.email == user_in.email).first()
+    if user:
         raise HTTPException(
-            status_code=503,
-            detail="Network error or server is unreachable. Please try again later.",
-        ) from e
+            status_code=400,
+            detail="A user with this email already exists.",
+        )
+
+    user = db.query(User).filter(User.username == user_in.username).first()
+    if user:
+        raise HTTPException(
+            status_code=400,
+            detail="A user with this username already exists.",
+        )
+
+    user = User(
+        email=user_in.email,
+        username=user_in.username,
+        hashed_password=security.get_password_hash(user_in.password),
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    get_or_create_preferences(db, user.id)
+    return user
 
 @router.post("/token", response_model=Token)
 def login_access_token(

@@ -281,20 +281,17 @@ docker compose -f docker-compose.dev.yml up -d --build
 
 | 配置项                      | 说明                     | 默认值                 | 适用场景                     |
 | --------------------------- | ------------------------ | ---------------------- | ---------------------------- |
-| EMBEDDINGS_PROVIDER         | Embedding 服务提供商     | openai                 | ✅                            |
-| OPENAI_API_KEY              | OpenAI API 密钥          | -                      | 使用 OpenAI Embedding 时必填 |
-| OPENAI_EMBEDDINGS_MODEL     | OpenAI Embedding 模型    | text-embedding-ada-002 | 使用 OpenAI Embedding 时必填 |
-| DASH_SCOPE_API_KEY          | DashScope API 密钥       | -                      | 使用 DashScope 时必填        |
-| DASH_SCOPE_EMBEDDINGS_MODEL | DashScope Embedding 模型 | -                      | 使用 DashScope 时必填        |
-| OLLAMA_EMBEDDINGS_MODEL     | Ollama Embedding 模型（`bge-m3` 或 `nomic-embed-text`） | bge-m3 | 使用 Ollama Embedding 时必填 |
+| EMBEDDINGS_PROVIDER | Embedding 服务提供商 | openai | ✅ |
+| EMBEDDINGS_API_KEY | Embedding API Key（随 EMBEDDINGS_PROVIDER 生效） | - | openai/dashscope 等需 Key 时必填 |
+| EMBEDDINGS_API_BASE | Embedding API 地址（Ollama 为服务 URL） | - | ollama 等需 base 时必填 |
+| EMBEDDINGS_MODEL | Embedding 模型名 | - | ✅ |
 
 ### 向量数据库配置
 
 | 配置项             | 说明                      | 默认值                | 适用场景             |
 | ------------------ | ------------------------- | --------------------- | -------------------- |
 | VECTOR_STORE_TYPE  | 向量存储类型              | chroma                | ✅                    |
-| CHROMA_DB_HOST     | ChromaDB 服务器地址       | localhost             | 使用 ChromaDB 时必填 |
-| CHROMA_DB_PORT     | ChromaDB 端口             | 8000                  | 使用 ChromaDB 时必填 |
+| CHROMA_URL         | Chroma HTTP 地址          | http://localhost:28100 | 使用 ChromaDB 时必填 |
 | QDRANT_URL         | Qdrant 向量存储 URL       | http://localhost:6333 | 使用 Qdrant 时必填   |
 | QDRANT_PREFER_GRPC | Qdrant 优先使用 gRPC 连接 | true                  | 使用 Qdrant 时可选   |
 

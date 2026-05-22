@@ -1,0 +1,18 @@
+# Standalone Chroma HTTP server (production / VPS).
+# Not started by docker-compose.prod.yml. deploy.sh runs this once per server.
+#
+# Data: bind-mount ./chroma_data
+# Backend: CHROMA_URL=http://host.docker.internal:28100 (port must match mapping below)
+services:
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: rag-chromadb
+    ports:
+      - "${CHROMA_HOST_PORT:-28100}:8000"
+    environment:
+      - ANONYMIZED_TELEMETRY=False
+      - IS_PERSISTENT=TRUE
+      - PERSIST_DIRECTORY=/chroma/chroma
+    volumes:
+      - ./chroma_data:/chroma/chroma
+    restart: unless-stopped

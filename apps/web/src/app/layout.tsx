@@ -1,7 +1,6 @@
 import { Inter } from "next/font/google";
 
 import { AppProviders } from "@/components/providers";
-import { Toaster } from "@/components/ui/sonner";
 import { cn } from "@/lib/utils";
 
 import "./globals.css";
@@ -23,10 +22,7 @@ export default function RootLayout({
           "min-h-screen antialiased"
         )}
       >
-        <AppProviders>
-          {children}
-          <Toaster />
-        </AppProviders>
+        <AppProviders>{children}</AppProviders>
       </body>
     </html>
   );

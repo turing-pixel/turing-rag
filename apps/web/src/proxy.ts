@@ -22,6 +22,7 @@ export default function proxy(request: NextRequest) {
   }
 
   const normalized = stripLocaleFromPathname(pathname);
+
   const needsDashboardPrefix =
     normalized === "/chat" ||
     normalized.startsWith("/chat/") ||

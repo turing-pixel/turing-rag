@@ -1,18 +1,29 @@
 from typing import List, Any
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, joinedload
 from app.db.session import get_db
 from app.models.user import User
-from app.models.chat import Chat, Message
+from app.models.chat import Chat
 from app.models.knowledge import KnowledgeBase
 from app.schemas.chat import (
     ChatCreate,
     ChatResponse,
+    ChatSummaryResponse,
     ChatUpdate,
-    MessageCreate,
-    MessageResponse
+    MessageResponse,
+    MessageUpdate,
+    SendMessageRequest,
 )
+from app.services.chat_message_ops import (
+    delete_messages_after,
+    delete_messages_from,
+    get_owned_message,
+    get_previous_user_message,
+)
+from app.services.chat_list_service import build_chat_summaries
+from app.services.chat_resolve import require_chat_for_user
+from app.schemas.chat_mappers import chat_to_response, message_to_response
 from app.schemas.llm import LlmModelsListResponse, LlmProviderOptionResponse, LlmModelOptionResponse
 from app.core.security import get_current_user
 from app.services.chat_service import generate_response
@@ -69,6 +80,16 @@ def list_llm_models(
         if default_config_id is not None:
             break
 
+    if default_config_id is None:
+        for provider in providers:
+            for model in provider.models:
+                if model.is_default and model.config_id is None:
+                    default_provider = model.provider
+                    default_model = model.model
+                    break
+            if default_provider and default_model:
+                break
+
     return LlmModelsListResponse(
         providers=[
             LlmProviderOptionResponse(
@@ -91,6 +112,41 @@ def list_llm_models(
         default_model=default_model,
         default_config_id=default_config_id,
     )
+
+
+@router.get("/workspace", response_model=ChatResponse)
+def get_or_create_workspace_chat(
+    *,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """Return the user's active workspace chat (latest), creating one if needed."""
+    chat = (
+        db.query(Chat)
+        .options(
+            joinedload(Chat.knowledge_bases),
+            joinedload(Chat.messages),
+        )
+        .filter(Chat.user_id == current_user.id)
+        .order_by(Chat.updated_at.desc(), Chat.id.desc())
+        .first()
+    )
+    if chat is not None:
+        return chat_to_response(chat)
+
+    default_provider, default_model = get_default_llm_config(db, current_user.id)
+    runtime = _resolve_chat_llm_runtime(
+        db,
+        current_user.id,
+        llm_provider=default_provider,
+        llm_model=default_model,
+    )
+    chat = Chat(title="Chat", user_id=current_user.id)
+    _apply_runtime_to_chat(chat, runtime)
+    db.add(chat)
+    db.commit()
+    db.refresh(chat)
+    return chat_to_response(chat)
 
 
 @router.post("", response_model=ChatResponse)
@@ -132,65 +188,50 @@ def create_chat(
     db.add(chat)
     db.commit()
     db.refresh(chat)
-    return chat
+    return chat_to_response(chat)
 
-@router.get("", response_model=List[ChatResponse])
+@router.get("", response_model=List[ChatSummaryResponse])
 def get_chats(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
     skip: int = 0,
     limit: int = 100
 ) -> Any:
-    chats = (
-        db.query(Chat)
-        .options(joinedload(Chat.knowledge_bases))
-        .filter(Chat.user_id == current_user.id)
-        .offset(skip)
-        .limit(limit)
-        .all()
+    return build_chat_summaries(
+        db, user_id=current_user.id, skip=skip, limit=limit
     )
-    return chats
 
 @router.get("/{chat_id}", response_model=ChatResponse)
 def get_chat(
     *,
     db: Session = Depends(get_db),
-    chat_id: int,
+    chat_id: str,
     current_user: User = Depends(get_current_user)
 ) -> Any:
-    chat = (
-        db.query(Chat)
-        .options(joinedload(Chat.knowledge_bases))
-        .filter(
-            Chat.id == chat_id,
-            Chat.user_id == current_user.id
-        )
-        .first()
+    chat = require_chat_for_user(
+        db,
+        chat_id,
+        current_user.id,
+        load_knowledge_bases=True,
+        load_messages=True,
     )
-    if not chat:
-        raise HTTPException(status_code=404, detail="Chat not found")
-    return chat
+    return chat_to_response(chat)
 
 
 @router.patch("/{chat_id}", response_model=ChatResponse)
 def update_chat(
     *,
     db: Session = Depends(get_db),
-    chat_id: int,
+    chat_id: str,
     chat_in: ChatUpdate,
     current_user: User = Depends(get_current_user),
 ) -> Any:
-    chat = (
-        db.query(Chat)
-        .options(joinedload(Chat.knowledge_bases))
-        .filter(
-            Chat.id == chat_id,
-            Chat.user_id == current_user.id,
-        )
-        .first()
+    chat = require_chat_for_user(
+        db,
+        chat_id,
+        current_user.id,
+        load_knowledge_bases=True,
     )
-    if not chat:
-        raise HTTPException(status_code=404, detail="Chat not found")
 
     if chat_in.title is not None:
         chat.title = chat_in.title
@@ -211,48 +252,191 @@ def update_chat(
             )
         chat.knowledge_bases = knowledge_bases
 
-    if (
-        chat_in.llm_config_id is not None
-        or chat_in.llm_provider is not None
-        or chat_in.llm_model is not None
-    ):
+    llm_fields = {"llm_config_id", "llm_provider", "llm_model"}
+    if llm_fields.intersection(chat_in.model_fields_set):
         runtime = _resolve_chat_llm_runtime(
             db,
             current_user.id,
-            llm_config_id=chat_in.llm_config_id or chat.llm_config_id,
-            llm_provider=chat_in.llm_provider or chat.llm_provider,
-            llm_model=chat_in.llm_model or chat.llm_model,
+            llm_config_id=(
+                chat_in.llm_config_id
+                if "llm_config_id" in chat_in.model_fields_set
+                else chat.llm_config_id
+            ),
+            llm_provider=(
+                chat_in.llm_provider
+                if "llm_provider" in chat_in.model_fields_set
+                else chat.llm_provider
+            ),
+            llm_model=(
+                chat_in.llm_model
+                if "llm_model" in chat_in.model_fields_set
+                else chat.llm_model
+            ),
         )
         _apply_runtime_to_chat(chat, runtime)
 
     db.add(chat)
     db.commit()
     db.refresh(chat)
-    return chat
+    return chat_to_response(chat)
+
+def _parse_message_content(body: SendMessageRequest | dict) -> str:
+    if isinstance(body, SendMessageRequest):
+        return body.content.strip()
+    if isinstance(body, dict):
+        if body.get("content"):
+            return str(body["content"]).strip()
+        legacy = body.get("messages")
+        if isinstance(legacy, list) and legacy:
+            last = legacy[-1]
+            if not isinstance(last, dict) or last.get("role") != "user":
+                raise HTTPException(
+                    status_code=400,
+                    detail="Last message must be from user",
+                )
+            return str(last.get("content", "")).strip()
+    raise HTTPException(status_code=400, detail="content is required")
+
+
+@router.patch("/{chat_id}/messages/{message_id}", response_model=MessageResponse)
+def update_message(
+    *,
+    db: Session = Depends(get_db),
+    chat_id: str,
+    message_id: int,
+    body: MessageUpdate,
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    if not body.model_fields_set:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    chat = require_chat_for_user(db, chat_id, current_user.id)
+    message = get_owned_message(
+        db,
+        chat_id=chat.id,
+        message_id=message_id,
+        user_id=current_user.id,
+    )
+    if not message:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    if body.content is not None:
+        if message.role != "user":
+            raise HTTPException(
+                status_code=400,
+                detail="Only user messages can be edited",
+            )
+        message.content = body.content.strip()
+        if not message.content:
+            raise HTTPException(status_code=400, detail="content must not be empty")
+        delete_messages_after(db, chat_id=chat.id, after_message_id=message.id)
+
+    if "feedback" in body.model_fields_set:
+        if body.feedback is None:
+            message.feedback = None
+        else:
+            if message.role != "assistant":
+                raise HTTPException(
+                    status_code=400,
+                    detail="Feedback is only supported on assistant messages",
+                )
+            message.feedback = body.feedback
+
+    db.add(message)
+    db.commit()
+    db.refresh(message)
+    return message_to_response(message, chat.uuid)
+
+
+@router.post("/{chat_id}/messages/{message_id}/regenerate")
+async def regenerate_message(
+    request: Request,
+    *,
+    db: Session = Depends(get_db),
+    chat_id: str,
+    message_id: int,
+    current_user: User = Depends(get_current_user),
+) -> StreamingResponse:
+    chat = require_chat_for_user(
+        db, chat_id, current_user.id, load_knowledge_bases=True
+    )
+    message = get_owned_message(
+        db,
+        chat_id=chat.id,
+        message_id=message_id,
+        user_id=current_user.id,
+    )
+    if not message:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    if message.role == "assistant":
+        prev_user = get_previous_user_message(
+            db, chat_id=chat.id, before_message_id=message.id
+        )
+        if not prev_user:
+            raise HTTPException(
+                status_code=400,
+                detail="No user message found before this assistant reply",
+            )
+        delete_messages_from(db, chat_id=chat.id, from_message_id=message.id)
+        query = prev_user.content
+    elif message.role == "user":
+        delete_messages_after(db, chat_id=chat.id, after_message_id=message.id)
+        query = message.content
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported message role")
+
+    db.commit()
+
+    runtime = _resolve_chat_llm_runtime(
+        db,
+        current_user.id,
+        llm_config_id=chat.llm_config_id,
+        llm_provider=chat.llm_provider,
+        llm_model=chat.llm_model,
+    )
+    knowledge_base_ids = [kb.id for kb in chat.knowledge_bases]
+
+    async def response_stream():
+        async for chunk in generate_response(
+            query=query,
+            chat_id=chat.id,
+            db=db,
+            knowledge_base_ids=knowledge_base_ids,
+            llm_runtime=runtime,
+            is_disconnected=request.is_disconnected,
+            persist_user_message=False,
+        ):
+            yield chunk
+
+    return StreamingResponse(
+        response_stream(),
+        media_type="text/event-stream",
+        headers={
+            "x-vercel-ai-data-stream": "v1",
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
 
 @router.post("/{chat_id}/messages")
 async def create_message(
+    request: Request,
     *,
     db: Session = Depends(get_db),
-    chat_id: int,
-    messages: dict,
+    chat_id: str,
+    body: SendMessageRequest,
     current_user: User = Depends(get_current_user)
 ) -> StreamingResponse:
-    chat = (
-        db.query(Chat)
-        .options(joinedload(Chat.knowledge_bases))
-        .filter(
-            Chat.id == chat_id,
-            Chat.user_id == current_user.id
-        )
-        .first()
+    chat = require_chat_for_user(
+        db, chat_id, current_user.id, load_knowledge_bases=True
     )
-    if not chat:
-        raise HTTPException(status_code=404, detail="Chat not found")
 
-    last_message = messages["messages"][-1]
-    if last_message["role"] != "user":
-        raise HTTPException(status_code=400, detail="Last message must be from user")
+    query = _parse_message_content(body)
+    if not query:
+        raise HTTPException(status_code=400, detail="content must not be empty")
 
     runtime = _resolve_chat_llm_runtime(
         db,
@@ -266,12 +450,12 @@ async def create_message(
 
     async def response_stream():
         async for chunk in generate_response(
-            query=last_message["content"],
-            messages=messages,
-            knowledge_base_ids=knowledge_base_ids,
-            chat_id=chat_id,
+            query=query,
+            chat_id=chat.id,
             db=db,
+            knowledge_base_ids=knowledge_base_ids,
             llm_runtime=runtime,
+            is_disconnected=request.is_disconnected,
         ):
             yield chunk
 
@@ -279,27 +463,21 @@ async def create_message(
         response_stream(),
         media_type="text/event-stream",
         headers={
-            "x-vercel-ai-data-stream": "v1"
-        }
+            "x-vercel-ai-data-stream": "v1",
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 @router.delete("/{chat_id}")
 def delete_chat(
     *,
     db: Session = Depends(get_db),
-    chat_id: int,
+    chat_id: str,
     current_user: User = Depends(get_current_user)
 ) -> Any:
-    chat = (
-        db.query(Chat)
-        .filter(
-            Chat.id == chat_id,
-            Chat.user_id == current_user.id
-        )
-        .first()
-    )
-    if not chat:
-        raise HTTPException(status_code=404, detail="Chat not found")
+    chat = require_chat_for_user(db, chat_id, current_user.id)
 
     db.delete(chat)
     db.commit()

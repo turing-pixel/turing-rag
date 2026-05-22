@@ -13,7 +13,6 @@ import {
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import DashboardLayout from "@/components/layout/dashboard-layout";
 import { DashboardPageContainer } from "@/components/layout/dashboard-page-container";
 import { api, ApiError } from "@/lib/api";
 import { PROCESSING_POLL_INTERVAL_MS } from "@/lib/document-processing-poll";
@@ -266,8 +265,7 @@ export default function UploadPage({
 
   const hasUploadedFiles = files.some((f) => f.status === "uploaded");
   return (
-    <DashboardLayout>
-      <DashboardPageContainer className="space-y-8">
+    <DashboardPageContainer className="space-y-8">
         <header className="space-y-1">
           <h1 className="text-2xl font-semibold tracking-tight">
             Upload Documents
@@ -393,7 +391,6 @@ export default function UploadPage({
             </button>
           )}
         </div>
-      </DashboardPageContainer>
-    </DashboardLayout>
+    </DashboardPageContainer>
   );
 }
