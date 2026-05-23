@@ -4,12 +4,11 @@ import { getDefaultSelection } from "@/lib/llm-models";
 import { ensureDefaultLlmOnChat } from "@/lib/chat-session";
 
 export interface ChatSummary {
-  id: string;
+  uuid: string;
   title: string;
-  user_id: number;
   created_at: string;
   updated_at: string;
-  knowledge_base_ids: number[];
+  knowledge_base_uuids: string[];
   llm_config_id?: number | null;
   llm_provider?: string | null;
   llm_model?: string | null;
@@ -20,9 +19,9 @@ export interface ChatSummary {
 }
 
 export interface ChatDetail {
-  id: string;
+  uuid: string;
   title: string;
-  knowledge_base_ids: number[];
+  knowledge_base_uuids: string[];
   llm_config_id?: number | null;
   llm_provider?: string | null;
   llm_model?: string | null;
@@ -49,13 +48,13 @@ export async function deleteChat(chatId: string): Promise<void> {
 
 export async function createChat(params: {
   title: string;
-  knowledgeBaseIds: number[];
+  knowledgeBaseUuids: string[];
 }): Promise<ChatDetail> {
   const models = (await api.get("/api/chat/models")) as LlmModelsResponse;
   const defaultModel = getDefaultSelection(models);
   const body: Record<string, unknown> = {
     title: params.title,
-    knowledge_base_ids: params.knowledgeBaseIds,
+    knowledge_base_uuids: params.knowledgeBaseUuids,
   };
   if (defaultModel?.configId != null) {
     body.llm_config_id = defaultModel.configId;
@@ -64,6 +63,6 @@ export async function createChat(params: {
     body.llm_model = defaultModel.model;
   }
   const chat = (await api.post("/api/chat", body)) as ChatDetail;
-  await ensureDefaultLlmOnChat(chat.id);
+  await ensureDefaultLlmOnChat(chat.uuid);
   return chat;
 }

@@ -116,6 +116,19 @@
   @apply text-[#404040];
 }
 
+/* Chat message log (aria-live region) */
+.chat-message-log {
+  min-width: 0;
+}
+
+.chat-message-log .group\/message {
+  scroll-margin-block: 0.5rem;
+}
+
+.chat-message-log .group\/message:last-child {
+  scroll-margin-block-end: 0;
+}
+
 /* Assistant message markdown: dedicated typography, no typography plugin / prose overrides */
 .chat-assistant-markdown {
   color: var(--foreground);
@@ -242,7 +255,14 @@
   width: 100%;
   border-collapse: collapse;
   font-size: 0.875rem;
+  margin: 0;
+}
+
+.chat-assistant-markdown .chat-markdown-table-wrap {
   margin: 0.75em 0;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .chat-assistant-markdown th,

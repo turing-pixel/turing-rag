@@ -26,6 +26,7 @@ import type { PersistedProcessingTask } from "@/lib/document-upload-persistence"
 import { cn } from "@/lib/utils";
 
 export type PipelineFileItem = {
+  id: string;
   file: File;
   status:
     | "pending"
@@ -104,7 +105,7 @@ export function DocumentProcessingPipelineList({
 
           return (
             <Item
-              key={file.uploadId ?? file.taskId ?? file.file.name}
+              key={file.id}
               variant="outline"
               size="sm"
             >

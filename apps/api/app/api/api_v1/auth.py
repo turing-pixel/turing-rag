@@ -11,8 +11,17 @@ from app.core.config import settings
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.token import Token
-from app.schemas.user import UserCreate, UserResponse
+from app.schemas.user import (
+    UserCreate,
+    UserPreferencesResponse,
+    UserProfileUpdate,
+    UserResponse,
+)
 from app.services.user_preference_service import get_or_create_preferences
+from app.services.user_profile_service import (
+    get_user_preferences_summary,
+    update_user_profile,
+)
 
 router = APIRouter()
 
@@ -69,7 +78,7 @@ def login_access_token(
     
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = security.create_access_token(
-        data={"sub": user.username}, expires_delta=access_token_expires
+        data={"sub": user.uuid}, expires_delta=access_token_expires
     )
     return {"access_token": access_token, "token_type": "bearer"}
 
@@ -79,3 +88,47 @@ def test_token(current_user: User = Depends(get_current_user)) -> Any:
     Test access token by getting current user.
     """
     return current_user
+
+
+@router.get("/me", response_model=UserResponse)
+def read_current_user(current_user: User = Depends(get_current_user)) -> Any:
+    """Return the authenticated user's profile."""
+    return current_user
+
+
+@router.patch("/me", response_model=UserResponse)
+def update_current_user(
+    *,
+    db: Session = Depends(get_db),
+    user_in: UserProfileUpdate,
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """Update the authenticated user's profile."""
+    if not any(
+        value is not None
+        for value in (user_in.email, user_in.username, user_in.password)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No fields to update.",
+        )
+
+    try:
+        return update_user_profile(
+            db,
+            current_user,
+            email=user_in.email,
+            username=user_in.username,
+            password=user_in.password,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+
+@router.get("/preferences", response_model=UserPreferencesResponse)
+def read_user_preferences(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """Return resolved default LLM and embedding preferences for the current user."""
+    return get_user_preferences_summary(db, current_user.id)

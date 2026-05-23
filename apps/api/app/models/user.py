@@ -1,11 +1,21 @@
 from sqlalchemy import Boolean, Column, Integer, String
 from sqlalchemy.orm import relationship
+
+from app.core.uuid_utils import new_uuid
 from app.models.base import Base, TimestampMixin
+
 
 class User(Base, TimestampMixin):
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
+    uuid = Column(
+        String(26),
+        unique=True,
+        nullable=False,
+        default=new_uuid,
+        index=True,
+    )
     email = Column(String(255), unique=True, index=True, nullable=False)
     username = Column(String(255), unique=True, index=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)

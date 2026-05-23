@@ -85,6 +85,8 @@
       "rag": "RAG Pipeline",
       "groupKnowledge": "Knowledge & chat",
       "groupSettings": "Models & access",
+      "groupAccount": "Account",
+      "account": "Profile",
       "signOut": "Sign out",
       "logoAlt": "Logo"
     },
@@ -101,7 +103,8 @@
         "llm-configs": "Chat models",
         "embedding-configs": "Embedding models",
         "test-retrieval": "Test retrieval",
-        "rag": "RAG Pipeline"
+        "rag": "RAG Pipeline",
+        "account": "Profile"
       }
     },
     "rag": {
@@ -181,7 +184,7 @@
         },
         "userMessage": {
           "title": "User message",
-          "subtitle": "POST /api/chat/:id/messages",
+          "subtitle": "POST /api/chat/:chat_uuid/messages",
           "detail": "SSE stream via generate_response"
         },
         "resolveLlm": {
@@ -248,6 +251,7 @@
     "listSubtitle": "Explore and manage your chat history",
     "startNewChat": "Start new chat",
     "searchPlaceholder": "Search conversations...",
+    "searchAria": "Search conversations",
     "searchNoResults": "No conversations match your search.",
     "messagesMeta": "{count} messages",
     "emptyTitle": "No conversations yet",
@@ -294,6 +298,8 @@
     "retrievalSearchQuery": "Search query:",
     "retrievalResults": "Found {count} relevant excerpts",
     "retrievalSourcesUsed": "{count} sources referenced",
+    "retrievalScoreLabel": "Retrieval score",
+    "retrievalBestScore": "Best score: {score}",
     "retrievalSourcesToggleAria": "Expand or collapse referenced sources",
     "retrievalMoreSources": "{count} more",
     "retrievalUnknownDocument": "Untitled document",
@@ -313,6 +319,7 @@
     "retrievalStep_rank_done": "Using {selected} of {recalled} fragments ({pruned} deduplicated)",
     "retrievalStep_rank_doneSimple": "Using {selected} fragments for context",
     "retrievalStep_rank_doneEmpty": "No fragments selected",
+    "retrievalStep_rank_lowConfidence": "No strong supporting context found",
     "retrievalStep_rank_fragments": "{count} fragments used",
     "retrievalStep_generate_title": "Generate answer",
     "retrievalStep_generate_active": "Generating answer…",
@@ -345,6 +352,8 @@
     "welcomeDescription": "Ask questions about {kb}. Answers are grounded in your knowledge base.",
     "welcomeDescriptionNoKb": "Send a message to begin.",
     "messageActionsLabel": "Message actions",
+    "historySidebarCollapse": "Collapse conversation list",
+    "historySidebarExpand": "Expand conversation list",
     "copyMessage": "Copy",
     "copiedMessage": "Copied",
     "regenerateMessage": "Regenerate",
@@ -474,6 +483,36 @@
     "reindexHint": "After changing embedding model or dimensions, re-process documents in your knowledge bases.",
     "envDefaultReadOnlyBadge": "Read-only",
     "envDefaultDisplayName": "System default"
+  },
+  "accountPage": {
+    "title": "Profile",
+    "description": "Manage your account details and view default model preferences.",
+    "profileSection": "Account",
+    "profileDescription": "Update your email, username, or password.",
+    "preferencesSection": "Preferences",
+    "preferencesDescription": "Defaults used for chat and embedding when you start a new session. Change them on the model configuration pages.",
+    "email": "Email",
+    "username": "Username",
+    "password": "New password",
+    "passwordPlaceholder": "Leave blank to keep current password",
+    "uuid": "User ID",
+    "role": "Role",
+    "roleAdmin": "Administrator",
+    "roleUser": "User",
+    "status": "Status",
+    "statusActive": "Active",
+    "statusInactive": "Inactive",
+    "memberSince": "Member since",
+    "save": "Save changes",
+    "saving": "Saving...",
+    "defaultLlm": "Default chat model",
+    "defaultEmbedding": "Default embedding model",
+    "sourceEnv": "System default",
+    "sourceConfig": "Custom configuration",
+    "notConfigured": "Not configured",
+    "manageLlm": "Manage chat models",
+    "manageEmbedding": "Manage embedding models",
+    "providerModel": "{provider} / {model}"
   },
   "apiKeysPage": {
     "title": "API keys",
@@ -728,6 +767,9 @@
     "testRetrievalMissing": "Please enter a search query",
     "testRetrievalError": "Test retrieval failed",
     "testRetrievalSuccess": "Retrieval completed",
+    "accountLoadError": "Failed to load profile",
+    "accountUpdateSuccess": "Profile updated successfully",
+    "accountUpdateError": "Failed to update profile",
     "apiKeysLoadError": "Failed to fetch API keys",
     "apiKeyNameRequired": "Please enter a name for the API key",
     "apiKeyCreateSuccess": "API key created successfully",

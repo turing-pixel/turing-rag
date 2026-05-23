@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 export interface KnowledgeBaseCardItem {
-  id: number;
+  uuid: string;
   name: string;
   description: string | null;
   icon?: string | null;
@@ -105,7 +105,7 @@ export function KnowledgeBaseCard({
           <DropdownMenuSeparator />
           <DropdownMenuGroup>
             <DropdownMenuItem asChild>
-              <Link href={`/dashboard/knowledge/${kb.id}`}>
+              <Link href={`/dashboard/knowledge/${kb.uuid}`}>
                 <ArrowUpRight className="size-4" />
                 {t("openKbDetail")}
               </Link>
@@ -143,7 +143,7 @@ export function KnowledgeBaseCard({
               {t("editKb")}
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
-              <Link href={`/dashboard/test-retrieval/${kb.id}`}>
+              <Link href={`/dashboard/test-retrieval/${kb.uuid}`}>
                 <BookSearch className="size-4" />
                 {testRetrievalLabel}
               </Link>
@@ -165,7 +165,7 @@ export function KnowledgeBaseCard({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <Link href={`/dashboard/knowledge/${kb.id}`} className="flex flex-1 flex-col">
+      <Link href={`/dashboard/knowledge/${kb.uuid}`} className="flex flex-1 flex-col">
         <CardContent className="flex min-h-44 flex-1 flex-col items-start gap-4">
           <KnowledgeBaseIcon icon={kb.icon} iconColor={kb.icon_color} />
           <div className="flex w-full flex-col gap-1.5">

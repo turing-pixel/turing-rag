@@ -1,6 +1,6 @@
 from .user import User
 from .knowledge import KnowledgeBase, Document, DocumentChunk
-from .chat import Chat, Message
+from .chat import Chat, Message, MessageSource
 from .api_key import APIKey
 from .llm_config import LlmConfig
 from .embedding_config import EmbeddingConfig
@@ -13,6 +13,7 @@ __all__ = [
     "DocumentChunk",
     "Chat",
     "Message",
+    "MessageSource",
     "APIKey",
     "LlmConfig",
     "EmbeddingConfig",

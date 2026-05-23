@@ -56,7 +56,7 @@ export function mergeTaskStatusMaps(
 type TaskStatusResponse = Record<string, ProcessingTaskStatus>;
 
 export type RunProcessingPollOptions = {
-  knowledgeBaseId: number;
+  knowledgeBaseUuid: string;
   taskIds: number[];
   uploadIdByTaskId: Map<number, number>;
   shouldAbort: () => boolean;
@@ -99,7 +99,7 @@ function parseTaskStatuses(
 }
 
 export function runProcessingPoll({
-  knowledgeBaseId,
+  knowledgeBaseUuid,
   taskIds,
   uploadIdByTaskId,
   shouldAbort,
@@ -116,7 +116,7 @@ export function runProcessingPoll({
 
     try {
       const response = (await api.get(
-        `/api/knowledge-base/${knowledgeBaseId}/documents/tasks?task_ids=${taskIds.join(
+        `/api/knowledge-base/${knowledgeBaseUuid}/documents/tasks?task_ids=${taskIds.join(
           ","
         )}`
       )) as TaskStatusResponse;

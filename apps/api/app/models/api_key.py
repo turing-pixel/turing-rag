@@ -7,10 +7,10 @@ from app.models.base import Base, TimestampMixin
 class APIKey(Base, TimestampMixin):
     __tablename__ = "api_keys"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     key = Column(VARCHAR(128), unique=True, index=True, nullable=False)
     name = Column(String(255), nullable=False)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     last_used_at = Column(DateTime(timezone=True), nullable=True)
 

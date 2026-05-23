@@ -102,7 +102,7 @@ export default function KnowledgeBasePage() {
 
     setIsSaving(true);
     try {
-      const updated = await api.put(`/api/knowledge-base/${editingKb.id}`, {
+      const updated = await api.put(`/api/knowledge-base/${editingKb.uuid}`, {
         name,
         description: editDescription.trim() || null,
         icon: editIcon,
@@ -110,7 +110,7 @@ export default function KnowledgeBasePage() {
       });
       setKnowledgeBases((prev) =>
         prev.map((kb) =>
-          kb.id === editingKb.id
+          kb.uuid === editingKb.uuid
             ? {
                 ...kb,
                 name: updated.name,
@@ -134,14 +134,14 @@ export default function KnowledgeBasePage() {
   };
 
   const handleQuickChat = (kb: KnowledgeBase) => {
-    router.push(chatUrlWithKnowledgeBases(kb.id));
+    router.push(chatUrlWithKnowledgeBases(kb.uuid));
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (uuid: string) => {
     if (!confirm(tPage("confirmDelete"))) return;
     try {
-      await api.delete(`/api/knowledge-base/${id}`);
-      setKnowledgeBases((prev) => prev.filter((kb) => kb.id !== id));
+      await api.delete(`/api/knowledge-base/${uuid}`);
+      setKnowledgeBases((prev) => prev.filter((kb) => kb.uuid !== uuid));
       toast.success(t("kbDeleted"));
     } catch (error) {
       console.error("Failed to delete knowledge base:", error);
@@ -189,16 +189,16 @@ export default function KnowledgeBasePage() {
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
             {knowledgeBases.map((kb) => (
               <KnowledgeBaseCard
-                key={kb.id}
+                key={kb.uuid}
                 kb={kb}
                 dateLocale={dateLocale}
                 testRetrievalLabel={tBreadcrumbSeg("test-retrieval")}
                 isStartingChat={false}
                 onEdit={() => openEditDialog(kb)}
-                onDelete={() => handleDelete(kb.id)}
+                onDelete={() => handleDelete(kb.uuid)}
                 onQuickChat={() => handleQuickChat(kb)}
                 onUploadDocument={() =>
-                  openDocumentUpload(kb.id, {
+                  openDocumentUpload(kb.uuid, {
                     onComplete: () => void fetchKnowledgeBases(),
                   })
                 }

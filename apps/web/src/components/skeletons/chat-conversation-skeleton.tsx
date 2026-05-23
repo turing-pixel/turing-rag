@@ -1,5 +1,10 @@
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  chatConversationContentClass,
+  chatConversationFooterClass,
+  chatMessageViewportClass,
+} from "@/lib/chat-conversation-layout";
 import { cn } from "@/lib/utils";
 
 interface ChatConversationSkeletonProps {
@@ -10,9 +15,13 @@ export function ChatConversationSkeleton({
   className,
 }: ChatConversationSkeletonProps) {
   return (
-    <div className={cn("flex h-full min-h-0 w-full flex-col overflow-hidden", className)} aria-busy>
-      <ScrollArea className="min-h-0 flex-1">
-        <div className="mx-auto flex w-full max-w-5xl flex-col gap-0 py-6">
+    <>
+      <ScrollArea
+        className={cn("min-h-0 flex-1", className)}
+        viewportClassName={chatMessageViewportClass}
+        aria-busy
+      >
+        <div className={chatConversationContentClass}>
           <div className="flex justify-end">
             <Skeleton className="h-16 w-[min(100%,18rem)] rounded-2xl" />
           </div>
@@ -31,12 +40,12 @@ export function ChatConversationSkeleton({
         </div>
       </ScrollArea>
 
-      <footer className="shrink-0 px-4 py-3 sm:px-6 lg:px-8">
+      <footer className={chatConversationFooterClass}>
         <div className="mx-auto w-full max-w-5xl space-y-2">
           <Skeleton className="h-24 w-full rounded-lg" />
           <Skeleton className="mx-auto hidden h-3 w-48 sm:block" />
         </div>
       </footer>
-    </div>
+    </>
   );
 }

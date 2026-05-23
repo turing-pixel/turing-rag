@@ -9,19 +9,13 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, aliased, joinedload
 
 from app.models.chat import Chat, Message
-from app.services.citation_markdown import (
-    LLM_RESPONSE_SEPARATOR,
-    normalize_citation_markdown,
-)
+from app.services.citation_markdown import normalize_citation_markdown
 
 
 def _preview_text(content: str, role: str) -> str:
     if not content:
         return ""
-    text = content
-    if role == "assistant" and LLM_RESPONSE_SEPARATOR in text:
-        text = text.split(LLM_RESPONSE_SEPARATOR, 1)[-1]
-    text = normalize_citation_markdown(text)
+    text = normalize_citation_markdown(content) if role == "assistant" else content
     for marker in ("[citation](", "[citation:", "[Citation:"):
         while marker in text:
             start = text.find(marker)
@@ -95,12 +89,11 @@ def build_chat_summaries(
         knowledge_bases = getattr(chat, "knowledge_bases", None) or []
         summaries.append(
             {
-                "id": chat.uuid,
+                "uuid": chat.uuid,
                 "title": chat.title,
-                "user_id": chat.user_id,
                 "created_at": chat.created_at,
                 "updated_at": chat.updated_at,
-                "knowledge_base_ids": [kb.id for kb in knowledge_bases],
+                "knowledge_base_uuids": [kb.uuid for kb in knowledge_bases],
                 "llm_config_id": getattr(chat, "llm_config_id", None),
                 "llm_provider": getattr(chat, "llm_provider", None),
                 "llm_model": getattr(chat, "llm_model", None),

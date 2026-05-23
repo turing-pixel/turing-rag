@@ -18,6 +18,7 @@ import { DocumentFileIcon } from "@/components/knowledge-base/document-file-icon
 import { formatPipelineFileSize } from "@/lib/processing-task-status-ui";
 
 export type UploadFileListItem = {
+  id: string;
   file: File;
   status:
     | "pending"
@@ -79,7 +80,7 @@ export function DocumentUploadFileList({
           );
 
           return (
-            <Item key={fileStatus.file.name} variant="outline">
+            <Item key={fileStatus.id} variant="outline">
               <ItemMedia>
                 <DocumentFileIcon fileName={fileStatus.file.name} size="lg" />
               </ItemMedia>

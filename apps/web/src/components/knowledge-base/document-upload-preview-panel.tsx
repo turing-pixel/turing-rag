@@ -35,14 +35,15 @@ export type PreviewChunk = {
 };
 
 export type PreviewDocumentOption = {
+  id: string;
   uploadId: number;
   fileName: string;
 };
 
 type DocumentUploadPreviewPanelProps = {
   documents: PreviewDocumentOption[];
-  selectedUploadId: number | null;
-  onSelectUploadId: (uploadId: number) => void;
+  selectedFileId: string | null;
+  onSelectFileId: (fileId: string) => void;
   chunkSize: number;
   chunkOverlap: number;
   onChunkSizeChange: (value: number) => void;
@@ -62,8 +63,8 @@ type DocumentUploadPreviewPanelProps = {
 
 export function DocumentUploadPreviewPanel({
   documents,
-  selectedUploadId,
-  onSelectUploadId,
+  selectedFileId,
+  onSelectFileId,
   chunkSize,
   chunkOverlap,
   onChunkSizeChange,
@@ -77,15 +78,15 @@ export function DocumentUploadPreviewPanel({
       <Field>
         <FieldLabel>{labels.previewHeading}</FieldLabel>
         <Select
-          value={selectedUploadId?.toString()}
-          onValueChange={(value) => onSelectUploadId(parseInt(value, 10))}
+          value={selectedFileId ?? undefined}
+          onValueChange={onSelectFileId}
         >
           <SelectTrigger>
             <SelectValue placeholder={labels.selectPlaceholder} />
           </SelectTrigger>
           <SelectContent>
             {documents.map((doc) => (
-              <SelectItem key={doc.uploadId} value={doc.uploadId.toString()}>
+              <SelectItem key={doc.id} value={doc.id}>
                 {doc.fileName}
               </SelectItem>
             ))}

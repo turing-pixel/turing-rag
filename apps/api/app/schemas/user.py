@@ -43,8 +43,54 @@ class UserCreate(BaseModel):
 class UserUpdate(UserBase):
     password: Optional[str] = None
 
+
+class UserProfileUpdate(BaseModel):
+    email: Optional[EmailStr] = None
+    username: Optional[str] = Field(
+        default=None,
+        min_length=USERNAME_MIN_LENGTH,
+        max_length=USERNAME_MAX_LENGTH,
+    )
+    password: Optional[str] = None
+
+    @field_validator("username")
+    @classmethod
+    def username_format(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        stripped = value.strip()
+        message = validate_username_format(stripped)
+        if message:
+            raise ValueError(message)
+        return stripped
+
+    @field_validator("password")
+    @classmethod
+    def password_strength(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        message = validate_password_strength(value)
+        if message:
+            raise ValueError(message)
+        return value
+
+
+class ModelDefaultPreference(BaseModel):
+    source: str
+    config_id: Optional[int] = None
+    config_name: Optional[str] = None
+    provider: Optional[str] = None
+    model: Optional[str] = None
+    configured: bool = True
+
+
+class UserPreferencesResponse(BaseModel):
+    default_llm: ModelDefaultPreference
+    default_embedding: ModelDefaultPreference
+
+
 class UserResponse(UserBase):
-    id: int
+    uuid: str
     created_at: datetime
     updated_at: datetime
 

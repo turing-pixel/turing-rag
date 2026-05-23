@@ -59,7 +59,7 @@ describe('Answer Component - Issue #69 Fix', () => {
       {
         id: 1,
         text: 'Citation 1',
-        metadata: { kb_id: 1, document_id: 1 },
+        metadata: { kb_uuid: "01KB0000000000000000000001", document_id: 1 },
       },
     ];
 
@@ -79,7 +79,7 @@ describe('Answer Component - Issue #69 Fix', () => {
               {
                 id: 1,
                 text: `Citation ${i}`,
-                metadata: { kb_id: 1, document_id: 1 },
+                metadata: { kb_uuid: "01KB0000000000000000000001", document_id: 1 },
               },
             ]}
           />
@@ -130,7 +130,7 @@ describe('Answer Component - Issue #69 Fix', () => {
               {
                 id: 1,
                 text: `Citation ${i}`,
-                metadata: { kb_id: 1, document_id: 1 },
+                metadata: { kb_uuid: "01KB0000000000000000000001", document_id: 1 },
               },
             ]}
           />
@@ -169,7 +169,7 @@ describe('Answer Component - Issue #69 Fix', () => {
       {
         id: 1,
         text: 'Test citation',
-        metadata: { kb_id: 1, document_id: 1 },
+        metadata: { kb_uuid: "01KB0000000000000000000001", document_id: 1 },
       },
     ];
 
@@ -182,8 +182,12 @@ describe('Answer Component - Issue #69 Fix', () => {
 
     // Wait for API calls to complete
     await waitFor(() => {
-      expect(api.get).toHaveBeenCalledWith('/api/knowledge-base/1');
-      expect(api.get).toHaveBeenCalledWith('/api/knowledge-base/1/documents/1');
+      expect(api.get).toHaveBeenCalledWith(
+        '/api/knowledge-base/01KB0000000000000000000001'
+      );
+      expect(api.get).toHaveBeenCalledWith(
+        '/api/knowledge-base/01KB0000000000000000000001/documents/1'
+      );
     });
   });
 });

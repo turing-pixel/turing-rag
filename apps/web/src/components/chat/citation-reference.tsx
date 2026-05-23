@@ -20,6 +20,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { kbRefFromMetadata } from "@/lib/kb-ref";
 import { cn } from "@/lib/utils";
 
 export interface Citation {
@@ -157,13 +158,8 @@ export function CitationReference({
     () => getMetadataEntries(citation.metadata),
     [citation.metadata]
   );
-  const kbId = citation.metadata.kb_id;
-  const kbHref =
-    typeof kbId === "number"
-      ? `/dashboard/knowledge/${kbId}`
-      : typeof kbId === "string" && kbId.trim() !== ""
-        ? `/dashboard/knowledge/${kbId}`
-        : null;
+  const kbRef = kbRefFromMetadata(citation.metadata);
+  const kbHref = kbRef ? `/dashboard/knowledge/${kbRef}` : null;
 
   return (
     <Popover>
@@ -183,11 +179,7 @@ export function CitationReference({
         align="start"
         sideOffset={10}
         collisionPadding={12}
-        className={cn(
-          "citation-popover flex w-[min(19rem,calc(100vw-2rem))] max-h-[min(24rem,68vh)] flex-col gap-0 overflow-hidden",
-          "rounded-xl border border-primary/20 bg-popover p-0 text-popover-foreground",
-          "shadow-md ring-1 ring-primary/10"
-        )}
+        className="flex w-[min(24rem,calc(100vw-2rem))] max-h-[min(24rem,68vh)] flex-col gap-0 overflow-hidden p-0"
       >
         <header className="shrink-0 border-b border-border/50 px-3 py-2.5">
           {citationInfo ? (

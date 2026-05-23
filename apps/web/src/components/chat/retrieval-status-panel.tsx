@@ -104,6 +104,14 @@ function SourceList({
           >
             {doc.file_name || t("retrievalUnknownDocument")}
           </span>
+          {typeof doc.score === "number" ? (
+            <span
+              className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 font-mono text-[0.625rem] leading-none text-muted-foreground/70"
+              title={t("retrievalScoreLabel")}
+            >
+              {doc.score.toFixed(3)}
+            </span>
+          ) : null}
         </li>
       ))}
       {overflowCount > 0 ? (
@@ -185,6 +193,9 @@ function stepLabel(
       case "recall":
         return t("retrievalStep_recall_done", { count: recalled });
       case "rank":
+        if (stream.lowConfidence) {
+          return t("retrievalStep_rank_lowConfidence");
+        }
         if (selected === 0) {
           return t("retrievalStep_rank_doneEmpty");
         }
@@ -227,6 +238,12 @@ function stepDetail(
 
   if (step.id === "search" && searchQuery) {
     return `${t("retrievalSearchQuery")} ${searchQuery}`;
+  }
+
+  if (step.id === "rank" && stream.bestScore != null) {
+    return t("retrievalBestScore", {
+      score: stream.bestScore.toFixed(3),
+    });
   }
 
   return null;

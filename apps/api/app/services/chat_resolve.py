@@ -2,18 +2,14 @@
 
 from __future__ import annotations
 
-import uuid
-
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.uuid_utils import normalize_uuid
 from app.models.chat import Chat
 
 
 def parse_chat_uuid(value: str) -> str | None:
-    try:
-        return str(uuid.UUID(str(value).strip()))
-    except (ValueError, AttributeError, TypeError):
-        return None
+    return normalize_uuid(value)
 
 
 def get_chat_for_user_by_uuid(

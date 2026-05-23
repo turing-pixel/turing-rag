@@ -36,7 +36,7 @@ export type DocumentDetail = {
   file_size: number;
   content_type: string;
   file_hash: string;
-  knowledge_base_id: number;
+  knowledge_base_uuid: string;
   created_at: string;
   updated_at: string;
   chunk_count: number;
@@ -44,7 +44,7 @@ export type DocumentDetail = {
 };
 
 type DocumentDetailDialogProps = {
-  knowledgeBaseId: number;
+  knowledgeBaseUuid: string;
   documentId: number | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -187,7 +187,7 @@ function DocumentDetailBody({
 }
 
 export function DocumentDetailDialog({
-  knowledgeBaseId,
+  knowledgeBaseUuid,
   documentId,
   open,
   onOpenChange,
@@ -215,7 +215,7 @@ export function DocumentDetailDialog({
     void (async () => {
       try {
         const data = (await api.get(
-          `/api/knowledge-base/${knowledgeBaseId}/documents/${documentId}`
+          `/api/knowledge-base/${knowledgeBaseUuid}/documents/${documentId}`
         )) as DocumentDetail;
         if (!cancelled) {
           setDetail(data);
@@ -237,7 +237,7 @@ export function DocumentDetailDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, documentId, knowledgeBaseId, t]);
+  }, [open, documentId, knowledgeBaseUuid, t]);
 
   useEffect(() => {
     if (!open) {

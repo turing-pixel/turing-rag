@@ -1,13 +1,15 @@
 import { chatIndexPath } from "@/lib/chat-paths";
 
 /** Build dashboard chat URL with pre-selected knowledge base(s). */
-export function chatUrlWithKnowledgeBases(kbIds: number | number[]): string {
-  const ids = Array.isArray(kbIds) ? kbIds : [kbIds];
-  if (ids.length === 0) return chatIndexPath();
-  if (ids.length === 1) {
-    return chatIndexPath(new URLSearchParams({ kb_id: String(ids[0]) }));
+export function chatUrlWithKnowledgeBases(
+  kbUuids: string | string[]
+): string {
+  const uuids = Array.isArray(kbUuids) ? kbUuids : [kbUuids];
+  if (uuids.length === 0) return chatIndexPath();
+  if (uuids.length === 1) {
+    return chatIndexPath(new URLSearchParams({ kb_uuid: uuids[0] }));
   }
   return chatIndexPath(
-    new URLSearchParams({ kb_ids: ids.join(",") })
+    new URLSearchParams({ kb_uuids: uuids.join(",") })
   );
 }

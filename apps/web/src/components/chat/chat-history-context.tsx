@@ -104,11 +104,11 @@ export function ChatHistoryProvider({ children }: { children: ReactNode }) {
       const primary = kbs[0];
       const chat = await createChat({
         title: t("defaultChatTitle", { name: primary.name }),
-        knowledgeBaseIds: [primary.id],
+        knowledgeBaseUuids: [primary.uuid],
       });
       await refreshChats();
-      selectChat(chat.id);
-      return chat.id;
+      selectChat(chat.uuid);
+      return chat.uuid;
     } catch (err) {
       const message =
         err instanceof ApiError ? err.message : t("createChatFailed");
@@ -123,11 +123,11 @@ export function ChatHistoryProvider({ children }: { children: ReactNode }) {
     async (chatId: string) => {
       try {
         await deleteChat(chatId);
-        const next = chats.filter((c) => c.id !== chatId);
+        const next = chats.filter((c) => c.uuid !== chatId);
         setChats(next);
         if (activeChatId === chatId) {
           if (next.length > 0) {
-            selectChat(next[0].id);
+            selectChat(next[0].uuid);
           } else {
             const id = await createNewChat();
             if (id == null) {

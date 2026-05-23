@@ -35,7 +35,7 @@ from app.core.minio import get_minio_client  # noqa: E402
 from app.db.session import engine  # noqa: E402
 from app.models.api_key import APIKey  # noqa: E402, F401
 from app.models.base import Base  # noqa: E402
-from app.models.chat import Chat, Message, chat_knowledge_bases  # noqa: E402, F401
+from app.models.chat import Chat, Message, MessageSource, chat_knowledge_bases  # noqa: E402, F401
 from app.models.embedding_config import EmbeddingConfig  # noqa: E402, F401
 from app.models.knowledge import (  # noqa: E402, F401
     Document,

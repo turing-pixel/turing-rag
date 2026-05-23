@@ -38,7 +38,7 @@ import {
 } from "@/components/ui/collapsible";
 
 interface KnowledgeBase {
-  id: number;
+  uuid: string;
   name: string;
   description: string;
 }
@@ -139,7 +139,7 @@ export default function TestPage({
     try {
       const data = await api.post("/api/knowledge-base/test-retrieval", {
         query,
-        kb_id: parseInt(id, 10),
+        kb_uuid: id,
         top_k: parseInt(topK, 10),
       });
 

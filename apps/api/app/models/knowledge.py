@@ -1,18 +1,40 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, Text, DateTime, JSON, BigInteger, TIMESTAMP, text
-from sqlalchemy.orm import relationship
-from app.models.base import Base, TimestampMixin
 from datetime import datetime
+
 import sqlalchemy as sa
+from sqlalchemy import (
+    JSON,
+    TIMESTAMP,
+    BigInteger,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    text,
+)
+from sqlalchemy.orm import relationship
+
+from app.core.uuid_utils import new_uuid
+from app.models.base import Base, TimestampMixin
+
 
 class KnowledgeBase(Base, TimestampMixin):
     __tablename__ = "knowledge_bases"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
+    uuid = Column(
+        String(26),
+        unique=True,
+        nullable=False,
+        default=new_uuid,
+        index=True,
+    )
     name = Column(String(255), nullable=False)
     description = Column(Text)
     icon = Column(String(64), nullable=True)
     icon_color = Column(String(32), nullable=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -26,13 +48,15 @@ class KnowledgeBase(Base, TimestampMixin):
 class Document(Base, TimestampMixin):
     __tablename__ = "documents"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     file_path = Column(String(255), nullable=False)  # Path in MinIO
     file_name = Column(String(255), nullable=False)  # Actual file name
     file_size = Column(BigInteger, nullable=False)  # File size in bytes
     content_type = Column(String(100), nullable=False)  # MIME type
     file_hash = Column(String(64), index=True)  # SHA-256 hash of file content
-    knowledge_base_id = Column(Integer, ForeignKey("knowledge_bases.id"), nullable=False)
+    knowledge_base_id = Column(
+        Integer, ForeignKey("knowledge_bases.id", ondelete="CASCADE"), nullable=False
+    )
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -49,7 +73,7 @@ class Document(Base, TimestampMixin):
 class DocumentUpload(Base):
     __tablename__ = "document_uploads"
     
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     knowledge_base_id = Column(Integer, ForeignKey("knowledge_bases.id", ondelete="CASCADE"), nullable=False)
     file_name = Column(String, nullable=False)
     file_hash = Column(String, nullable=False)
@@ -66,10 +90,16 @@ class DocumentUpload(Base):
 class ProcessingTask(Base):
     __tablename__ = "processing_tasks"
 
-    id = Column(Integer, primary_key=True, index=True)
-    knowledge_base_id = Column(Integer, ForeignKey("knowledge_bases.id"))
-    document_id = Column(Integer, ForeignKey("documents.id"), nullable=True)
-    document_upload_id = Column(Integer, ForeignKey("document_uploads.id"), nullable=True)
+    id = Column(Integer, primary_key=True)
+    knowledge_base_id = Column(
+        Integer, ForeignKey("knowledge_bases.id", ondelete="CASCADE"), nullable=True
+    )
+    document_id = Column(
+        Integer, ForeignKey("documents.id", ondelete="SET NULL"), nullable=True
+    )
+    document_upload_id = Column(
+        Integer, ForeignKey("document_uploads.id", ondelete="SET NULL"), nullable=True
+    )
     status = Column(String(50), default="pending")  # pending, processing, completed, failed
     progress = Column(Integer, nullable=False, default=0, server_default="0")
     progress_message = Column(String(255), nullable=True)
@@ -85,8 +115,10 @@ class DocumentChunk(Base, TimestampMixin):
     __tablename__ = "document_chunks"
 
     id = Column(String(64), primary_key=True)  # SHA-256 hash as ID
-    kb_id = Column(Integer, ForeignKey("knowledge_bases.id"), nullable=False)
-    document_id = Column(Integer, ForeignKey("documents.id"), nullable=False)
+    kb_id = Column(Integer, ForeignKey("knowledge_bases.id", ondelete="CASCADE"), nullable=False)
+    document_id = Column(
+        Integer, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False
+    )
     file_name = Column(String(255), nullable=False)
     chunk_metadata = Column(JSON, nullable=True)
     hash = Column(String(64), nullable=False, index=True)  # Content hash for change detection

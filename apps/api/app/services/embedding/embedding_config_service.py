@@ -336,8 +336,25 @@ def resolve_embedding_runtime(
     )
 
 
-def create_user_embeddings(db: Session, user_id: int):
+def embedding_runtime_cache_key(runtime: ResolvedEmbeddingRuntime) -> str:
+    source = f"config:{runtime.config_id}" if runtime.config_id is not None else "env"
+    return "|".join(
+        [
+            source,
+            runtime.provider or "",
+            runtime.model or "",
+            runtime.api_base or "",
+        ]
+    )
+
+
+def create_user_embeddings_with_runtime(db: Session, user_id: int):
     from app.services.embedding.embedding_factory import EmbeddingsFactory
 
     runtime = resolve_embedding_runtime(db, user_id)
-    return EmbeddingsFactory.create(runtime)
+    return EmbeddingsFactory.create(runtime), runtime
+
+
+def create_user_embeddings(db: Session, user_id: int):
+    embeddings, _runtime = create_user_embeddings_with_runtime(db, user_id)
+    return embeddings

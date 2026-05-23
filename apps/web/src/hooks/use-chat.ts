@@ -16,6 +16,7 @@ import {
 } from "@/lib/ai-data-stream";
 import {
   INITIAL_RETRIEVAL_STREAM_STATE,
+  retrievalStateFromApi,
   type RetrievalStreamState,
 } from "@/lib/chat-retrieval-stream";
 import { applyRetrievalStreamItems } from "@/lib/apply-retrieval-stream-items";
@@ -75,10 +76,20 @@ function parseDbMessageId(id: string): number | null {
 /** Replace optimistic UUID messages with DB-backed ids after stream completes. */
 async function syncMessagesFromChat(
   chatId: string,
-  setMessages: Dispatch<SetStateAction<ChatMessage[]>>
+  setMessages: Dispatch<SetStateAction<ChatMessage[]>>,
+  setRetrievalStream: Dispatch<SetStateAction<RetrievalStreamState>>
 ): Promise<void> {
   const chat = await loadChatById(chatId);
   setMessages(formatChatHistoryMessages(chat.messages) as ChatMessage[]);
+  const lastAssistant = [...chat.messages]
+    .reverse()
+    .find((m) => m.role === "assistant");
+  setRetrievalStream(
+    retrievalStateFromApi(
+      lastAssistant?.retrieval ?? null,
+      lastAssistant?.sources ?? []
+    )
+  );
 }
 
 export function useChat({
@@ -252,7 +263,11 @@ export function useChat({
         await runAssistantStream(response, assistantId);
         if (chatId != null && !messageIdsSyncedRef.current) {
           try {
-            await syncMessagesFromChat(chatId, setMessages);
+            await syncMessagesFromChat(
+              chatId,
+              setMessages,
+              setRetrievalStream
+            );
           } catch (syncErr) {
             console.error("Failed to sync messages after stream:", syncErr);
           }
@@ -370,7 +385,11 @@ export function useChat({
         });
         if (chatId != null && !messageIdsSyncedRef.current) {
           try {
-            await syncMessagesFromChat(chatId, setMessages);
+            await syncMessagesFromChat(
+              chatId,
+              setMessages,
+              setRetrievalStream
+            );
           } catch (syncErr) {
             console.error("Failed to sync messages after stream:", syncErr);
           }

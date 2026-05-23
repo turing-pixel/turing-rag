@@ -12,33 +12,50 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_K_PER_KB = 4
 MAX_MERGED_DOCS = 12
+RETRIEVAL_SCORE_METADATA_KEY = "retrieval_score"
 
 
 def _doc_dedupe_key(doc: LangchainDocument) -> Tuple[Any, ...]:
     meta = doc.metadata or {}
     content = (doc.page_content or "")[:240]
     return (
-        meta.get("kb_id"),
+        meta.get("kb_uuid"),
         meta.get("document_id"),
         content,
     )
 
 
 async def _search_one_kb(
-    store: Any, kb_id: int, search_query: str, k: int
+    store: Any, kb_uuid: str, search_query: str, k: int
 ) -> List[LangchainDocument]:
-    retriever = store.as_retriever(search_kwargs={"k": k})
     try:
-        docs = await retriever.ainvoke(search_query)
+        if hasattr(store, "similarity_search_with_score"):
+            scored_docs = await asyncio.to_thread(
+                store.similarity_search_with_score, search_query, k
+            )
+            docs = []
+            for doc, score in scored_docs or []:
+                meta = dict(doc.metadata or {})
+                try:
+                    meta[RETRIEVAL_SCORE_METADATA_KEY] = float(score)
+                except (TypeError, ValueError):
+                    pass
+                docs.append(
+                    LangchainDocument(page_content=doc.page_content, metadata=meta)
+                )
+        else:
+            retriever = store.as_retriever(search_kwargs={"k": k})
+            docs = await retriever.ainvoke(search_query)
     except Exception as exc:
         logger.warning(
-            "Retrieval failed for kb_id=%s: %s", kb_id, exc, exc_info=True
+            "Retrieval failed for kb_uuid=%s: %s", kb_uuid, exc, exc_info=True
         )
         return []
     out: List[LangchainDocument] = []
     for doc in docs or []:
         meta = dict(doc.metadata or {})
-        meta.setdefault("kb_id", kb_id)
+        meta.setdefault("kb_uuid", kb_uuid)
+        meta.pop("kb_id", None)
         out.append(
             LangchainDocument(page_content=doc.page_content, metadata=meta)
         )
@@ -70,7 +87,7 @@ def _yield_unique_docs(
 async def stream_retrieve_from_knowledge_bases(
     search_query: str,
     vector_stores: Sequence[Any],
-    kb_ids: Sequence[int],
+    kb_uuids: Sequence[str],
     *,
     k_per_kb: int = DEFAULT_K_PER_KB,
     max_docs: int = MAX_MERGED_DOCS,
@@ -85,7 +102,7 @@ async def stream_retrieve_from_knowledge_bases(
 
     if len(vector_stores) == 1:
         batch = await _search_one_kb(
-            vector_stores[0], kb_ids[0], search_query, max_docs
+            vector_stores[0], kb_uuids[0], search_query, max_docs
         )
         for doc in _yield_unique_docs(
             batch, seen, merged_count, max_docs, stats
@@ -95,10 +112,10 @@ async def stream_retrieve_from_knowledge_bases(
             await asyncio.sleep(0)
         return
 
-    pairs = list(zip(vector_stores, kb_ids))
+    pairs = list(zip(vector_stores, kb_uuids))
     tasks = [
-        asyncio.create_task(_search_one_kb(store, kb_id, search_query, k_per_kb))
-        for store, kb_id in pairs
+        asyncio.create_task(_search_one_kb(store, kb_uuid, search_query, k_per_kb))
+        for store, kb_uuid in pairs
     ]
     try:
         for finished in asyncio.as_completed(tasks):
@@ -120,7 +137,7 @@ async def stream_retrieve_from_knowledge_bases(
 async def retrieve_from_knowledge_bases(
     search_query: str,
     vector_stores: Sequence[Any],
-    kb_ids: Sequence[int],
+    kb_uuids: Sequence[str],
     *,
     k_per_kb: int = DEFAULT_K_PER_KB,
     max_docs: int = MAX_MERGED_DOCS,
@@ -131,7 +148,7 @@ async def retrieve_from_knowledge_bases(
         async for doc in stream_retrieve_from_knowledge_bases(
             search_query,
             vector_stores,
-            kb_ids,
+            kb_uuids,
             k_per_kb=k_per_kb,
             max_docs=max_docs,
         )

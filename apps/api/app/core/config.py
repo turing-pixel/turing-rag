@@ -95,6 +95,26 @@ class Settings(BaseSettings):
 
     # Vector Store settings
     VECTOR_STORE_TYPE: str = os.getenv("VECTOR_STORE_TYPE", "chroma")
+    # Optional retrieval filtering. By default scores are reported but not filtered.
+    # Chroma/Qdrant LangChain score semantics commonly behave like distance
+    # (lower is better), but this can be changed with RETRIEVAL_SCORE_MODE.
+    RETRIEVAL_SCORE_THRESHOLD: str = os.getenv("RETRIEVAL_SCORE_THRESHOLD", "")
+    RETRIEVAL_SCORE_MODE: str = os.getenv("RETRIEVAL_SCORE_MODE", "distance")
+
+    @property
+    def retrieval_score_threshold(self) -> Optional[float]:
+        raw = (self.RETRIEVAL_SCORE_THRESHOLD or "").strip()
+        if not raw:
+            return None
+        try:
+            return float(raw)
+        except ValueError:
+            return None
+
+    @property
+    def retrieval_score_mode(self) -> str:
+        mode = (self.RETRIEVAL_SCORE_MODE or "distance").strip().lower()
+        return mode if mode in ("distance", "similarity") else "distance"
 
     # Chroma HTTP server (local: http://127.0.0.1:28100, prod: http://host.docker.internal:28100)
     CHROMA_URL: str = os.getenv("CHROMA_URL", "http://chromadb:8000")

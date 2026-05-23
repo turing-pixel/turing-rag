@@ -42,6 +42,13 @@ def _embeddings_for_kb(db: Session, kb_id: int):
         return EmbeddingsFactory.create()
     return create_user_embeddings(db, kb.user_id)
 
+
+def _kb_uuid_for_internal_id(db: Session, kb_id: int) -> str:
+    kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
+    if not kb:
+        raise ValueError(f"Knowledge base {kb_id} not found")
+    return kb.uuid
+
 EMBED_BATCH_SIZE = 64
 CHUNK_PROGRESS_COMMIT_EVERY = 10
 
@@ -287,6 +294,7 @@ async def process_document(file_path: str, file_name: str, kb_id: int, document_
         db = SessionLocal()
         try:
             embeddings = _embeddings_for_kb(db, kb_id)
+            kb_uuid = _kb_uuid_for_internal_id(db, kb_id)
         finally:
             db.close()
 
@@ -330,8 +338,8 @@ async def process_document(file_path: str, file_name: str, kb_id: int, document_
                 **chunk.metadata,
                 "chunk_id": chunk_id,
                 "file_name": file_name,
-                "kb_id": kb_id,
-                "document_id": document_id
+                "kb_uuid": kb_uuid,
+                "document_id": document_id,
             }
             
             new_chunks.append({
@@ -555,6 +563,7 @@ def _process_document_in_worker(
                 task, db, _PROGRESS_VECTOR, "Connecting to vector index", commit=True
             )
             embeddings = _embeddings_for_kb(db, kb_id)
+            kb_uuid = _kb_uuid_for_internal_id(db, kb_id)
             try:
                 vector_store = VectorStoreFactory.create(
                     store_type=settings.VECTOR_STORE_TYPE,
@@ -640,7 +649,8 @@ def _process_document_in_worker(
                 ).hexdigest()
 
                 chunk.metadata["source"] = file_name
-                chunk.metadata["kb_id"] = kb_id
+                chunk.metadata["kb_uuid"] = kb_uuid
+                chunk.metadata.pop("kb_id", None)
                 chunk.metadata["document_id"] = document.id
                 chunk.metadata["chunk_id"] = chunk_id
 

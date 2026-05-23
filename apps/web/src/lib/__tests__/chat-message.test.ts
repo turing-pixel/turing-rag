@@ -1,7 +1,9 @@
 import {
+  formatChatHistoryMessages,
   normalizeCitationMarkdown,
   stripCitationMarkers,
 } from "@/lib/chat-message";
+import type { ApiMessageSource } from "@/lib/chat-retrieval-stream";
 
 describe("normalizeCitationMarkdown", () => {
   it("converts [citation:n] to markdown links", () => {
@@ -40,5 +42,31 @@ describe("stripCitationMarkers", () => {
     expect(stripCitationMarkers("Hello [citation](2) world.")).toBe(
       "Hello world."
     );
+  });
+});
+
+describe("formatChatHistoryMessages", () => {
+  it("maps API sources to citations with UTF-8 excerpt text", () => {
+    const sources: ApiMessageSource[] = [
+      {
+        rank: 1,
+        document_id: 10,
+        kb_uuid: "kb-uuid-1",
+        file_name: "中华人民共和国工会法.docx",
+        excerpt: "中华人民共和国工会法",
+        text: "中华人民共和国工会法",
+        preview: "中华人民共和国工会法",
+      },
+    ];
+    const formatted = formatChatHistoryMessages([
+      {
+        id: 2,
+        role: "assistant",
+        content: "根据工会法，答案是……",
+        sources,
+      },
+    ]);
+    expect(formatted[0].citations?.[0]?.text).toBe("中华人民共和国工会法");
+    expect(formatted[0].content).toContain("根据工会法");
   });
 });

@@ -30,7 +30,7 @@ import {
 } from "@/components/ui/stepper";
 
 interface DocumentUploadStepsProps {
-  knowledgeBaseId: number;
+  knowledgeBaseUuid: string;
   onComplete?: () => void;
   /** Fired when background document processing starts or finishes. */
   onProcessingChange?: (active: boolean) => void;
@@ -42,7 +42,17 @@ interface DocumentUploadStepsProps {
   layout?: "dialog" | "inline";
 }
 
+function createFileEntryId(seed?: { uploadId?: number; taskId?: number }): string {
+  if (seed?.uploadId != null && seed?.taskId != null) {
+    return `upload-${seed.uploadId}-task-${seed.taskId}`;
+  }
+  if (seed?.uploadId != null) return `upload-${seed.uploadId}`;
+  if (seed?.taskId != null) return `task-${seed.taskId}`;
+  return crypto.randomUUID();
+}
+
 interface FileStatus {
+  id: string;
   file: File;
   status:
     | "pending"
@@ -106,7 +116,7 @@ const STEP_ITEMS = [
 ];
 
 export function DocumentUploadSteps({
-  knowledgeBaseId,
+  knowledgeBaseUuid,
   onComplete,
   onProcessingChange,
   resumeJob = null,
@@ -119,9 +129,9 @@ export function DocumentUploadSteps({
   const [uploadedDocuments, setUploadedDocuments] = useState<{
     [key: number]: PreviewResponse;
   }>({});
-  const [selectedDocumentId, setSelectedDocumentId] = useState<number | null>(
-    null
-  );
+  const [selectedPreviewFileId, setSelectedPreviewFileId] = useState<
+    string | null
+  >(null);
   const [taskStatuses, setTaskStatuses] = useState<{
     [key: number]: TaskStatus;
   }>({});
@@ -172,6 +182,7 @@ export function DocumentUploadSteps({
     setFiles((prev) => {
       if (prev.length >= resumeJob.tasks.length) return prev;
       return resumeJob.tasks.map((t) => ({
+        id: createFileEntryId({ uploadId: t.uploadId, taskId: t.taskId }),
         file: new File([], t.fileName ?? `Document ${t.uploadId}`),
         status: "processing" as const,
         uploadId: t.uploadId,
@@ -197,6 +208,7 @@ export function DocumentUploadSteps({
           if (task?.status === "completed") status = "completed";
           if (task?.status === "failed") status = "error";
           return {
+            id: createFileEntryId({ uploadId: t.uploadId, taskId: t.taskId }),
             file: new File([], name),
             status,
             uploadId: t.uploadId,
@@ -231,6 +243,7 @@ export function DocumentUploadSteps({
     setFiles((prev) => [
       ...prev,
       ...acceptedFiles.map((file) => ({
+        id: createFileEntryId(),
         file,
         status: "pending" as const,
       })),
@@ -262,9 +275,6 @@ export function DocumentUploadSteps({
     setFiles((prev) => prev.filter((f) => f.file !== file));
   };
 
-  const normalizeFileName = (name: string) =>
-    name.split(/[/\\]/).pop() ?? name;
-
   const handleFileUpload = async () => {
     const pendingFiles = files.filter((f) => f.status === "pending");
     if (pendingFiles.length === 0) {
@@ -272,14 +282,12 @@ export function DocumentUploadSteps({
       return;
     }
 
-    const pendingNames = new Set(
-      pendingFiles.map((f) => normalizeFileName(f.file.name))
-    );
+    const pendingFileRefs = new Set(pendingFiles.map((f) => f.file));
 
     setIsLoading(true);
     setFiles((prev) =>
       prev.map((f) =>
-        pendingNames.has(normalizeFileName(f.file.name))
+        pendingFileRefs.has(f.file)
           ? { ...f, status: "uploading" as const }
           : f
       )
@@ -292,7 +300,7 @@ export function DocumentUploadSteps({
       });
 
       const raw = await api.post(
-        `/api/knowledge-base/${knowledgeBaseId}/documents/upload`,
+        `/api/knowledge-base/${knowledgeBaseUuid}/documents/upload`,
         formData,
         {
           headers: {},
@@ -301,28 +309,27 @@ export function DocumentUploadSteps({
 
       const data = (Array.isArray(raw) ? raw : []) as UploadResult[];
 
-      const resultByName = new Map(
-        data.map((d) => [normalizeFileName(d.file_name), d])
-      );
+      const resultByFile = new Map<File, UploadResult>();
+      pendingFiles.forEach((fileStatus, index) => {
+        const uploadResult = data[index];
+        if (uploadResult) {
+          resultByFile.set(fileStatus.file, uploadResult);
+        }
+      });
+
       const newUploads = data.filter((d) => d.status !== "exists");
       const existsCount = data.filter((d) => d.status === "exists").length;
       const missingCount = pendingFiles.filter(
-        (f) => !resultByName.has(normalizeFileName(f.file.name))
+        (f) => !resultByFile.has(f.file)
       ).length;
 
-      let firstUploadId: number | null = null;
-      for (const item of newUploads) {
-        if (item.upload_id != null && firstUploadId == null) {
-          firstUploadId = item.upload_id;
-        }
-      }
+      let firstSelectedPreviewId: string | null = null;
 
       setFiles((prev) =>
         prev.map((f) => {
-          const key = normalizeFileName(f.file.name);
-          if (!pendingNames.has(key)) return f;
+          if (!pendingFileRefs.has(f.file)) return f;
 
-          const uploadResult = resultByName.get(key);
+          const uploadResult = resultByFile.get(f.file);
           if (!uploadResult) {
             return {
               ...f,
@@ -338,6 +345,12 @@ export function DocumentUploadSteps({
               error: uploadResult.message,
             };
           }
+          if (
+            firstSelectedPreviewId == null &&
+            uploadResult.upload_id != null
+          ) {
+            firstSelectedPreviewId = f.id;
+          }
           return {
             ...f,
             status: "uploaded",
@@ -348,8 +361,8 @@ export function DocumentUploadSteps({
       );
 
       if (newUploads.length > 0) {
-        if (firstUploadId != null) {
-          setSelectedDocumentId(firstUploadId);
+        if (firstSelectedPreviewId != null) {
+          setSelectedPreviewFileId(firstSelectedPreviewId);
         }
         setCurrentStep(2);
         toast.success(tToast("uploadSuccessDesc", { count: newUploads.length }));
@@ -386,11 +399,10 @@ export function DocumentUploadSteps({
   };
 
   const handlePreview = async () => {
-    const selectedFile = files.find(
-      (f) =>
-        f.documentId === selectedDocumentId || f.uploadId === selectedDocumentId
-    );
-    if (!selectedFile || selectedDocumentId == null) return;
+    const selectedFile = files.find((f) => f.id === selectedPreviewFileId);
+    const previewDocumentId =
+      selectedFile?.documentId ?? selectedFile?.uploadId ?? null;
+    if (!selectedFile || previewDocumentId == null) return;
 
     if (
       !Number.isFinite(chunkSize) ||
@@ -406,9 +418,9 @@ export function DocumentUploadSteps({
     setIsLoading(true);
     try {
       const data = await api.post(
-        `/api/knowledge-base/${knowledgeBaseId}/documents/preview`,
+        `/api/knowledge-base/${knowledgeBaseUuid}/documents/preview`,
         {
-          document_ids: [selectedDocumentId],
+          document_ids: [previewDocumentId],
           chunk_size: chunkSize,
           chunk_overlap: chunkOverlap,
         }
@@ -448,7 +460,7 @@ export function DocumentUploadSteps({
 
     try {
       const data = (await api.post(
-        `/api/knowledge-base/${knowledgeBaseId}/documents/process`,
+        `/api/knowledge-base/${knowledgeBaseUuid}/documents/process`,
         resultsToProcess
       )) as TaskResponse;
 
@@ -491,7 +503,7 @@ export function DocumentUploadSteps({
         })
       );
       const job: PersistedProcessingJob = {
-        knowledgeBaseId,
+        knowledgeBaseUuid,
         tasks: data.tasks.map((t) => {
           const file = files.find((f) => f.uploadId === t.upload_id);
           return {
@@ -568,10 +580,13 @@ export function DocumentUploadSteps({
         f.status === "error")
   );
   const hasPendingFiles = files.some((f) => f.status === "pending");
+  const selectedPreviewFile = uploadedFiles.find(
+    (f) => f.id === selectedPreviewFileId
+  );
+  const previewLookupId =
+    selectedPreviewFile?.documentId ?? selectedPreviewFile?.uploadId ?? null;
   const previewData =
-    selectedDocumentId != null
-      ? uploadedDocuments[selectedDocumentId]
-      : undefined;
+    previewLookupId != null ? uploadedDocuments[previewLookupId] : undefined;
 
   const renderStepFooter = () => {
     if (currentStep === 1) {
@@ -594,7 +609,7 @@ export function DocumentUploadSteps({
             type="button"
             variant="outline"
             onClick={handlePreview}
-            disabled={isLoading || !selectedDocumentId}
+            disabled={isLoading || !selectedPreviewFileId}
           >
             {isLoading ? <Spinner /> : null}
             {tStep("previewChunks")}
@@ -699,18 +714,17 @@ export function DocumentUploadSteps({
       {currentStep === 2 && (
         <DocumentUploadPreviewPanel
           documents={uploadedFiles.map((f) => ({
+            id: f.id,
             uploadId: f.uploadId!,
             fileName: f.file.name,
           }))}
-          selectedUploadId={selectedDocumentId}
-          onSelectUploadId={setSelectedDocumentId}
+          selectedFileId={selectedPreviewFileId}
+          onSelectFileId={setSelectedPreviewFileId}
           chunkSize={chunkSize}
           chunkOverlap={chunkOverlap}
           onChunkSizeChange={setChunkSize}
           onChunkOverlapChange={setChunkOverlap}
-          previewFileName={
-            files.find((f) => f.uploadId === selectedDocumentId)?.file.name
-          }
+          previewFileName={selectedPreviewFile?.file.name}
           chunks={previewData?.chunks ?? []}
           labels={{
             previewHeading: tStep("previewHeading"),

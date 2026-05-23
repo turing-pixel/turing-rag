@@ -48,12 +48,12 @@ export type ProcessingPollCallbacks = {
 
 type DocumentUploadContextValue = {
   openDocumentUpload: (
-    knowledgeBaseId: number,
+    knowledgeBaseUuid: string,
     options?: OpenDocumentUploadOptions
   ) => void;
   openProcessingDialog: () => void;
   registerDocumentUploadComplete: (
-    knowledgeBaseId: number,
+    knowledgeBaseUuid: string,
     listener: () => void
   ) => () => void;
   startProcessingJob: (
@@ -81,7 +81,7 @@ export function useDocumentUpload() {
 }
 
 type UploadSession = {
-  knowledgeBaseId: number;
+  knowledgeBaseUuid: string;
   sessionKey: number;
   resumeMode: boolean;
 };
@@ -111,32 +111,32 @@ export function DocumentUploadProvider({
   const pollAbortRef = useRef(false);
   const resumeStartedRef = useRef(false);
   const pollCallbacksRef = useRef<ProcessingPollCallbacks | null>(null);
-  const listenersRef = useRef<Map<number, Set<() => void>>>(new Map());
+  const listenersRef = useRef<Map<string, Set<() => void>>>(new Map());
   const pendingOnCompleteRef = useRef<(() => void) | undefined>(undefined);
 
   const registerDocumentUploadComplete = useCallback(
-    (knowledgeBaseId: number, listener: () => void) => {
+    (knowledgeBaseUuid: string, listener: () => void) => {
       const map = listenersRef.current;
-      if (!map.has(knowledgeBaseId)) {
-        map.set(knowledgeBaseId, new Set());
+      if (!map.has(knowledgeBaseUuid)) {
+        map.set(knowledgeBaseUuid, new Set());
       }
-      map.get(knowledgeBaseId)!.add(listener);
+      map.get(knowledgeBaseUuid)!.add(listener);
       return () => {
-        map.get(knowledgeBaseId)?.delete(listener);
+        map.get(knowledgeBaseUuid)?.delete(listener);
       };
     },
     []
   );
 
-  const notifyComplete = useCallback((knowledgeBaseId: number) => {
-    listenersRef.current.get(knowledgeBaseId)?.forEach((fn) => fn());
+  const notifyComplete = useCallback((knowledgeBaseUuid: string) => {
+    listenersRef.current.get(knowledgeBaseUuid)?.forEach((fn) => fn());
     pendingOnCompleteRef.current?.();
     pendingOnCompleteRef.current = undefined;
   }, []);
 
   const finishProcessing = useCallback(
     (
-      knowledgeBaseId: number,
+      knowledgeBaseUuid: string,
       result: {
         allSucceeded: boolean;
         failedTasks: { file_name?: string; upload_id: number }[];
@@ -148,7 +148,7 @@ export function DocumentUploadProvider({
       setProcessingTaskStatuses({});
       clearProcessingJob();
       pollCallbacksRef.current = null;
-      notifyComplete(knowledgeBaseId);
+      notifyComplete(knowledgeBaseUuid);
 
       setCompleteAlert({
         open: true,
@@ -177,7 +177,7 @@ export function DocumentUploadProvider({
       );
 
       runProcessingPoll({
-        knowledgeBaseId: job.knowledgeBaseId,
+        knowledgeBaseUuid: job.knowledgeBaseUuid,
         taskIds,
         uploadIdByTaskId,
         shouldAbort: () => pollAbortRef.current,
@@ -187,7 +187,7 @@ export function DocumentUploadProvider({
         },
         onDone: (result) => {
           pollCallbacksRef.current?.onDone(result);
-          finishProcessing(job.knowledgeBaseId, result);
+          finishProcessing(job.knowledgeBaseUuid, result);
         },
         onError: () => {
           pollCallbacksRef.current?.onError();
@@ -238,14 +238,14 @@ export function DocumentUploadProvider({
   }, [runJobPoll, tToast]);
 
   const openDocumentUpload = useCallback(
-    (knowledgeBaseId: number, options?: OpenDocumentUploadOptions) => {
+    (knowledgeBaseUuid: string, options?: OpenDocumentUploadOptions) => {
       pendingOnCompleteRef.current = options?.onComplete;
       setSession((prev) => {
-        if (prev?.knowledgeBaseId === knowledgeBaseId && isProcessingRef.current) {
+        if (prev?.knowledgeBaseUuid === knowledgeBaseUuid && isProcessingRef.current) {
           return prev;
         }
         return {
-          knowledgeBaseId,
+          knowledgeBaseUuid,
           sessionKey: Date.now(),
           resumeMode: false,
         };
@@ -267,7 +267,7 @@ export function DocumentUploadProvider({
     }
 
     setSession({
-      knowledgeBaseId: job.knowledgeBaseId,
+      knowledgeBaseUuid: job.knowledgeBaseUuid,
       sessionKey: Date.now(),
       resumeMode: true,
     });
@@ -282,7 +282,7 @@ export function DocumentUploadProvider({
 
   const handleUploadComplete = useCallback(() => {
     if (session) {
-      notifyComplete(session.knowledgeBaseId);
+      notifyComplete(session.knowledgeBaseUuid);
     }
     setOpen(false);
     if (!isProcessingRef.current) {
@@ -306,7 +306,7 @@ export function DocumentUploadProvider({
           ? { ...prev, resumeMode: true }
           : activeJob
             ? {
-                knowledgeBaseId: activeJob.knowledgeBaseId,
+                knowledgeBaseUuid: activeJob.knowledgeBaseUuid,
                 sessionKey: Date.now(),
                 resumeMode: true,
               }
@@ -315,9 +315,9 @@ export function DocumentUploadProvider({
     }
   }, [activeJob]);
 
-  const dialogKnowledgeBaseId =
-    session?.knowledgeBaseId ?? activeJob?.knowledgeBaseId;
-  const mountDialog = dialogKnowledgeBaseId != null;
+  const dialogKnowledgeBaseUuid =
+    session?.knowledgeBaseUuid ?? activeJob?.knowledgeBaseUuid;
+  const mountDialog = dialogKnowledgeBaseUuid != null;
 
   const value: DocumentUploadContextValue = {
     openDocumentUpload,
@@ -345,9 +345,9 @@ export function DocumentUploadProvider({
               </DialogHeader>
             </div>
             <DocumentUploadSteps
-              key={session?.sessionKey ?? `resume-${dialogKnowledgeBaseId}`}
+              key={session?.sessionKey ?? `resume-${dialogKnowledgeBaseUuid}`}
               layout="dialog"
-              knowledgeBaseId={dialogKnowledgeBaseId!}
+              knowledgeBaseUuid={dialogKnowledgeBaseUuid!}
               onComplete={handleUploadComplete}
               onProcessingChange={handleProcessingChange}
               resumeJob={

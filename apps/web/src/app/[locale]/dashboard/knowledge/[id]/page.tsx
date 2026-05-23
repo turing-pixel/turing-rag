@@ -18,24 +18,24 @@ export default function KnowledgeBasePage() {
   const router = useRouter();
   const t = useTranslations("knowledgePage");
   const tToasts = useTranslations("toasts");
-  const knowledgeBaseId = parseInt(params.id as string);
+  const knowledgeBaseUuid = params.id as string;
   const [refreshKey, setRefreshKey] = useState(0);
   const { openDocumentUpload, registerDocumentUploadComplete } =
     useDocumentUpload();
 
   useEffect(() => {
-    return registerDocumentUploadComplete(knowledgeBaseId, () => {
+    return registerDocumentUploadComplete(knowledgeBaseUuid, () => {
       setRefreshKey((prev) => prev + 1);
     });
-  }, [knowledgeBaseId, registerDocumentUploadComplete]);
+  }, [knowledgeBaseUuid, registerDocumentUploadComplete]);
 
   const handleUploadComplete = useCallback(() => {
     setRefreshKey((prev) => prev + 1);
   }, []);
 
   const handleStartChat = useCallback(() => {
-    router.push(chatUrlWithKnowledgeBases(knowledgeBaseId));
-  }, [knowledgeBaseId, router]);
+    router.push(chatUrlWithKnowledgeBases(knowledgeBaseUuid));
+  }, [knowledgeBaseUuid, router]);
 
   return (
     <DashboardPageContainer className="space-y-8">
@@ -57,7 +57,7 @@ export default function KnowledgeBasePage() {
               type="button"
               className="gap-2"
               onClick={() =>
-                openDocumentUpload(knowledgeBaseId, {
+                openDocumentUpload(knowledgeBaseUuid, {
                   onComplete: handleUploadComplete,
                 })
               }
@@ -68,7 +68,7 @@ export default function KnowledgeBasePage() {
           </div>
         </header>
 
-        <DocumentList key={refreshKey} knowledgeBaseId={knowledgeBaseId} />
+        <DocumentList key={refreshKey} knowledgeBaseUuid={knowledgeBaseUuid} />
     </DashboardPageContainer>
   );
 }

@@ -26,6 +26,7 @@ const SEGMENT_KEYS = [
   "embedding-configs",
   "test-retrieval",
   "rag",
+  "account",
 ] as const;
 
 type SegmentKey = (typeof SEGMENT_KEYS)[number];
@@ -42,6 +43,7 @@ const DASHBOARD_SECTION_KEYS = new Set<SegmentKey>([
   "llm-configs",
   "embedding-configs",
   "test-retrieval",
+  "account",
 ]);
 
 /** Ensure breadcrumb hrefs stay under /dashboard (avoids /en/chat 404s). */

@@ -24,6 +24,8 @@ from app.schemas.knowledge import (
     DocumentDetailResponse,
     PreviewRequest,
 )
+from app.services.kb_resolve import require_kb_for_user
+from app.services.document_mappers import document_to_detail_response
 from app.services.kb_response import serialize_kb_response
 from app.services.document_processor import (
     process_document_background,
@@ -45,9 +47,19 @@ router = APIRouter()
 
 logger = logging.getLogger(__name__)
 
+
+def _safe_upload_file_name(file_name: str | None) -> str:
+    base = os.path.basename(file_name or "").strip()
+    cleaned = "".join(
+        c for c in base if c.isalnum() or c in ("-", "_", ".", " ")
+    ).strip()
+    cleaned = cleaned.strip(".")
+    return cleaned or "document"
+
+
 class TestRetrievalRequest(BaseModel):
     query: str
-    kb_id: int
+    kb_uuid: str
     top_k: int
 
 
@@ -93,54 +105,42 @@ def get_knowledge_bases(
     )
     return [serialize_kb_response(kb) for kb in knowledge_bases]
 
-@router.get("/{kb_id}", response_model=KnowledgeBaseResponse)
+@router.get("/{kb_uuid}", response_model=KnowledgeBaseResponse)
 def get_knowledge_base(
     *,
     db: Session = Depends(get_db),
-    kb_id: int,
+    kb_uuid: str,
     current_user: User = Depends(get_current_user)
 ) -> Any:
     """
     Get knowledge base by ID.
     """
     from sqlalchemy.orm import joinedload
-    
+
+    base = require_kb_for_user(db, kb_uuid, current_user.id)
     kb = (
         db.query(KnowledgeBase)
         .options(
             joinedload(KnowledgeBase.documents)
             .joinedload(Document.processing_tasks)
         )
-        .filter(
-            KnowledgeBase.id == kb_id,
-            KnowledgeBase.user_id == current_user.id
-        )
+        .filter(KnowledgeBase.id == base.id)
         .first()
     )
-
-    if not kb:
-        raise HTTPException(status_code=404, detail="Knowledge base not found")
-
     return serialize_kb_response(kb)
 
-@router.put("/{kb_id}", response_model=KnowledgeBaseResponse)
+@router.put("/{kb_uuid}", response_model=KnowledgeBaseResponse)
 def update_knowledge_base(
     *,
     db: Session = Depends(get_db),
-    kb_id: int,
+    kb_uuid: str,
     kb_in: KnowledgeBaseUpdate,
     current_user: User = Depends(get_current_user)
 ) -> Any:
     """
     Update knowledge base.
     """
-    kb = db.query(KnowledgeBase).filter(
-        KnowledgeBase.id == kb_id,
-        KnowledgeBase.user_id == current_user.id
-    ).first()
-    
-    if not kb:
-        raise HTTPException(status_code=404, detail="Knowledge base not found")
+    kb = require_kb_for_user(db, kb_uuid, current_user.id)
 
     update_data = kb_in.model_dump(exclude_unset=True)
     if not update_data:
@@ -183,11 +183,11 @@ def update_knowledge_base(
     logger.info(f"Knowledge base updated: {kb.name} for user {current_user.id}")
     return serialize_kb_response(kb)
 
-@router.delete("/{kb_id}")
+@router.delete("/{kb_uuid}")
 async def delete_knowledge_base(
     *,
     db: Session = Depends(get_db),
-    kb_id: int,
+    kb_uuid: str,
     current_user: User = Depends(get_current_user)
 ) -> Any:
     """
@@ -195,52 +195,49 @@ async def delete_knowledge_base(
     """
     logger = logging.getLogger(__name__)
     
-    kb = (
-        db.query(KnowledgeBase)
-        .filter(
-            KnowledgeBase.id == kb_id,
-            KnowledgeBase.user_id == current_user.id
-        )
-        .first()
-    )
-    if not kb:
-        raise HTTPException(status_code=404, detail="Knowledge base not found")
-    
+    kb = require_kb_for_user(db, kb_uuid, current_user.id)
+    kb_internal_id = kb.id
+
     try:
         # Get all document file paths before deletion
         document_paths = [doc.file_path for doc in kb.documents]
-        
+
         # Initialize services
         minio_client = get_minio_client()
         embeddings = create_user_embeddings(db, current_user.id)
 
         vector_store = VectorStoreFactory.create(
             store_type=settings.VECTOR_STORE_TYPE,
-            collection_name=f"kb_{kb_id}",
+            collection_name=f"kb_{kb_internal_id}",
             embedding_function=embeddings,
         )
-        
+
         # Clean up external resources first
         cleanup_errors = []
-        
+
         # 1. Clean up MinIO files
         try:
-            # Delete all objects with prefix kb_{kb_id}/
-            objects = minio_client.list_objects(settings.MINIO_BUCKET_NAME, prefix=f"kb_{kb_id}/")
+            objects = minio_client.list_objects(
+                settings.MINIO_BUCKET_NAME, prefix=f"kb_{kb_internal_id}/"
+            )
             for obj in objects:
                 minio_client.remove_object(settings.MINIO_BUCKET_NAME, obj.object_name)
-            logger.info(f"Cleaned up MinIO files for knowledge base {kb_id}")
+            logger.info(
+                "Cleaned up MinIO files for knowledge base %s", kb_internal_id
+            )
         except MinioException as e:
             cleanup_errors.append(f"Failed to clean up MinIO files: {str(e)}")
-            logger.error(f"MinIO cleanup error for kb {kb_id}: {str(e)}")
-        
+            logger.error("MinIO cleanup error for kb %s: %s", kb_internal_id, str(e))
+
         # 2. Clean up vector store
         try:
-            vector_store._store.delete_collection(f"kb_{kb_id}")
-            logger.info(f"Cleaned up vector store for knowledge base {kb_id}")
+            vector_store._store.delete_collection(f"kb_{kb_internal_id}")
+            logger.info("Cleaned up vector store for knowledge base %s", kb_internal_id)
         except Exception as e:
             cleanup_errors.append(f"Failed to clean up vector store: {str(e)}")
-            logger.error(f"Vector store cleanup error for kb {kb_id}: {str(e)}")
+            logger.error(
+                "Vector store cleanup error for kb %s: %s", kb_internal_id, str(e)
+            )
         
         # Finally, delete database records in a single transaction
         db.delete(kb)
@@ -256,13 +253,13 @@ async def delete_knowledge_base(
         return {"message": "Knowledge base and all associated resources deleted successfully"}
     except Exception as e:
         db.rollback()
-        logger.error(f"Failed to delete knowledge base {kb_id}: {str(e)}")
+        logger.error(f"Failed to delete knowledge base {kb_uuid}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to delete knowledge base: {str(e)}")
 
 # Batch upload documents
-@router.post("/{kb_id}/documents/upload")
+@router.post("/{kb_uuid}/documents/upload")
 async def upload_kb_documents(
-    kb_id: int,
+    kb_uuid: str,
     files: List[UploadFile],
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -270,24 +267,21 @@ async def upload_kb_documents(
     """
     Upload multiple documents to MinIO.
     """
-    kb = db.query(KnowledgeBase).filter(
-        KnowledgeBase.id == kb_id,
-        KnowledgeBase.user_id == current_user.id
-    ).first()
-    if not kb:
-        raise HTTPException(status_code=404, detail="Knowledge base not found")
-    
+    kb = require_kb_for_user(db, kb_uuid, current_user.id)
+    kb_internal_id = kb.id
+
     results = []
     for file in files:
+        safe_file_name = _safe_upload_file_name(file.filename)
         # 1. 计算文件 hash
         file_content = await file.read()
         file_hash = hashlib.sha256(file_content).hexdigest()
         
         # 2. 检查是否存在完全相同的文件（名称和hash都相同）
         existing_document = db.query(Document).filter(
-            Document.file_name == file.filename,
+            Document.file_name == safe_file_name,
             Document.file_hash == file_hash,
-            Document.knowledge_base_id == kb_id
+            Document.knowledge_base_id == kb_internal_id
         ).first()
         
         if existing_document:
@@ -307,8 +301,8 @@ async def upload_kb_documents(
 
         # 先创建上传记录获取 ID
         upload = DocumentUpload(
-            knowledge_base_id=kb_id,
-            file_name=file.filename,
+            knowledge_base_id=kb_internal_id,
+            file_name=safe_file_name,
             file_hash=file_hash,
             file_size=len(file_content),
             content_type=file.content_type,
@@ -319,7 +313,7 @@ async def upload_kb_documents(
         db.refresh(upload)
 
         # 用 upload.id 构建本地路径
-        local_path = f"{local_dir}/{upload.id}_{file.filename}"
+        local_path = os.path.join(local_dir, f"{upload.id}_{safe_file_name}")
         with open(local_path, "wb") as f:
             f.write(file_content)
 
@@ -329,7 +323,7 @@ async def upload_kb_documents(
 
         results.append({
             "upload_id": upload.id,
-            "file_name": file.filename,
+            "file_name": safe_file_name,
             "temp_path": local_path,
             "status": "pending",
             "skip_processing": False
@@ -337,9 +331,9 @@ async def upload_kb_documents(
     
     return results
 
-@router.post("/{kb_id}/documents/preview")
+@router.post("/{kb_uuid}/documents/preview")
 async def preview_kb_documents(
-    kb_id: int,
+    kb_uuid: str,
     preview_request: PreviewRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -347,11 +341,13 @@ async def preview_kb_documents(
     """
     Preview multiple documents' chunks.
     """
+    kb = require_kb_for_user(db, kb_uuid, current_user.id)
+    kb_internal_id = kb.id
     results = {}
     for doc_id in preview_request.document_ids:
         document = db.query(Document).join(KnowledgeBase).filter(
             Document.id == doc_id,
-            Document.knowledge_base_id == kb_id,
+            Document.knowledge_base_id == kb_internal_id,
             KnowledgeBase.user_id == current_user.id
         ).first()
         
@@ -360,7 +356,7 @@ async def preview_kb_documents(
         else:
             upload = db.query(DocumentUpload).join(KnowledgeBase).filter(
                 DocumentUpload.id == doc_id,
-                DocumentUpload.knowledge_base_id == kb_id,
+                DocumentUpload.knowledge_base_id == kb_internal_id,
                 KnowledgeBase.user_id == current_user.id
             ).first()
             
@@ -378,9 +374,9 @@ async def preview_kb_documents(
     
     return results
 
-@router.post("/{kb_id}/documents/process")
+@router.post("/{kb_uuid}/documents/process")
 async def process_kb_documents(
-    kb_id: int,
+    kb_uuid: str,
     upload_results: List[dict],
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
@@ -390,15 +386,10 @@ async def process_kb_documents(
     Process multiple documents asynchronously.
     """
     start_time = time.time()
-    
-    kb = db.query(KnowledgeBase).filter(
-        KnowledgeBase.id == kb_id,
-        KnowledgeBase.user_id == current_user.id
-    ).first()
-    
-    if not kb:
-        raise HTTPException(status_code=404, detail="Knowledge base not found")
-    
+
+    kb = require_kb_for_user(db, kb_uuid, current_user.id)
+    kb_internal_id = kb.id
+
     task_info = []
     upload_ids = []
     
@@ -412,7 +403,7 @@ async def process_kb_documents(
     
     uploads = db.query(DocumentUpload).filter(
         DocumentUpload.id.in_(upload_ids),
-        DocumentUpload.knowledge_base_id == kb_id
+        DocumentUpload.knowledge_base_id == kb_internal_id
     ).all()
     uploads_dict = {upload.id: upload for upload in uploads}
     if len(uploads_dict) != len(set(upload_ids)):
@@ -426,7 +417,7 @@ async def process_kb_documents(
             
         task = ProcessingTask(
             document_upload_id=upload_id,
-            knowledge_base_id=kb_id,
+            knowledge_base_id=kb_internal_id,
             status="pending"
         )
         all_tasks.append(task)
@@ -459,15 +450,15 @@ async def process_kb_documents(
     background_tasks.add_task(
         add_processing_tasks_to_queue,
         task_data,
-        kb_id
+        kb_internal_id
     )
     
     return {"tasks": task_info}
 
 
-@router.post("/{kb_id}/documents/{doc_id}/reprocess")
+@router.post("/{kb_uuid}/documents/{doc_id}/reprocess")
 async def reprocess_document(
-    kb_id: int,
+    kb_uuid: str,
     doc_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -475,22 +466,17 @@ async def reprocess_document(
     """
     Re-run chunking and embedding for one existing document (e.g. after changing embedding model).
     """
-    kb = db.query(KnowledgeBase).filter(
-        KnowledgeBase.id == kb_id,
-        KnowledgeBase.user_id == current_user.id,
-    ).first()
-    if not kb:
-        raise HTTPException(status_code=404, detail="Knowledge base not found")
+    kb = require_kb_for_user(db, kb_uuid, current_user.id)
 
     try:
-        return queue_document_reprocess(db, kb_id, doc_id)
+        return queue_document_reprocess(db, kb.id, doc_id)
     except DocumentDeleteError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message)
 
 
-@router.post("/{kb_id}/documents/retry-failed")
+@router.post("/{kb_uuid}/documents/retry-failed")
 async def retry_failed_documents(
-    kb_id: int,
+    kb_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -498,14 +484,9 @@ async def retry_failed_documents(
     Re-run embedding for tasks that failed (e.g. Ollama unreachable).
     Files are loaded from MinIO permanent storage when local temp is gone.
     """
-    kb = db.query(KnowledgeBase).filter(
-        KnowledgeBase.id == kb_id,
-        KnowledgeBase.user_id == current_user.id,
-    ).first()
-    if not kb:
-        raise HTTPException(status_code=404, detail="Knowledge base not found")
+    kb = require_kb_for_user(db, kb_uuid, current_user.id)
 
-    result = await queue_retry_failed_processing_tasks(kb_id)
+    result = await queue_retry_failed_processing_tasks(kb.id)
     return result
 
 
@@ -536,15 +517,22 @@ async def cleanup_temp_files(
         DocumentUpload.created_at < expired_time
     ).all()
     
-    minio_client = get_minio_client()
     for upload in expired_uploads:
-        try:
-            minio_client.remove_object(
-                bucket_name=settings.MINIO_BUCKET_NAME,
-                object_name=upload.temp_path
-            )
-        except MinioException as e:
-            logger.error(f"Failed to delete temp file {upload.temp_path}: {str(e)}")
+        if upload.temp_path and os.path.isabs(upload.temp_path):
+            try:
+                if os.path.exists(upload.temp_path):
+                    os.unlink(upload.temp_path)
+            except OSError as e:
+                logger.error("Failed to delete temp file %s: %s", upload.temp_path, e)
+        elif upload.temp_path:
+            minio_client = get_minio_client()
+            try:
+                minio_client.remove_object(
+                    bucket_name=settings.MINIO_BUCKET_NAME,
+                    object_name=upload.temp_path
+                )
+            except MinioException as e:
+                logger.error(f"Failed to delete temp object {upload.temp_path}: {str(e)}")
         
         db.delete(upload)
     
@@ -552,9 +540,9 @@ async def cleanup_temp_files(
     
     return {"message": f"Cleaned up {len(expired_uploads)} expired uploads"}
 
-@router.get("/{kb_id}/documents/tasks")
+@router.get("/{kb_uuid}/documents/tasks")
 async def get_processing_tasks(
-    kb_id: int,
+    kb_uuid: str,
     task_ids: str = Query(..., description="Comma-separated list of task IDs to check status for"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -566,16 +554,7 @@ async def get_processing_tasks(
     if not task_id_list:
         return {}
 
-    kb_exists = (
-        db.query(KnowledgeBase.id)
-        .filter(
-            KnowledgeBase.id == kb_id,
-            KnowledgeBase.user_id == current_user.id,
-        )
-        .first()
-    )
-    if not kb_exists:
-        raise HTTPException(status_code=404, detail="Knowledge base not found")
+    kb = require_kb_for_user(db, kb_uuid, current_user.id)
 
     tasks = (
         db.query(ProcessingTask)
@@ -584,7 +563,7 @@ async def get_processing_tasks(
         )
         .filter(
             ProcessingTask.id.in_(task_id_list),
-            ProcessingTask.knowledge_base_id == kb_id
+            ProcessingTask.knowledge_base_id == kb.id
         )
         .all()
     )
@@ -602,24 +581,25 @@ async def get_processing_tasks(
         for task in tasks
     }
 
-@router.get("/{kb_id}/documents/{doc_id}", response_model=DocumentDetailResponse)
+@router.get("/{kb_uuid}/documents/{doc_id}", response_model=DocumentDetailResponse)
 async def get_document(
     *,
     db: Session = Depends(get_db),
-    kb_id: int,
+    kb_uuid: str,
     doc_id: int,
     current_user: User = Depends(get_current_user)
 ) -> Any:
     """
     Get document details by ID.
     """
+    kb = require_kb_for_user(db, kb_uuid, current_user.id)
     document = (
         db.query(Document)
         .options(joinedload(Document.processing_tasks))
         .join(KnowledgeBase)
         .filter(
             Document.id == doc_id,
-            Document.knowledge_base_id == kb_id,
+            Document.knowledge_base_id == kb.id,
             KnowledgeBase.user_id == current_user.id
         )
         .first()
@@ -633,27 +613,29 @@ async def get_document(
         .filter(DocumentChunk.document_id == doc_id)
         .count()
     )
-    payload = DocumentDetailResponse.model_validate(document)
-    return payload.model_copy(update={"chunk_count": chunk_count})
+    return document_to_detail_response(
+        document, kb.uuid, chunk_count=chunk_count
+    )
 
 
-@router.delete("/{kb_id}/documents/{doc_id}")
+@router.delete("/{kb_uuid}/documents/{doc_id}")
 async def delete_document(
     *,
     db: Session = Depends(get_db),
-    kb_id: int,
+    kb_uuid: str,
     doc_id: int,
     current_user: User = Depends(get_current_user),
 ) -> Any:
     """
     Delete a document and associated vectors, chunks, processing tasks, and storage.
     """
+    kb = require_kb_for_user(db, kb_uuid, current_user.id)
     document = (
         db.query(Document)
         .join(KnowledgeBase)
         .filter(
             Document.id == doc_id,
-            Document.knowledge_base_id == kb_id,
+            Document.knowledge_base_id == kb.id,
             KnowledgeBase.user_id == current_user.id,
         )
         .first()
@@ -662,7 +644,7 @@ async def delete_document(
         raise HTTPException(status_code=404, detail="Document not found")
 
     try:
-        return delete_knowledge_base_document(db, document, kb_id)
+        return delete_knowledge_base_document(db, document, kb.id)
     except DocumentDeleteError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message)
     except Exception as exc:
@@ -684,22 +666,13 @@ async def test_retrieval(
     Test retrieval quality for a given query against a knowledge base.
     """
     try:
-        kb = db.query(KnowledgeBase).filter(
-            KnowledgeBase.id == request.kb_id,
-            KnowledgeBase.user_id == current_user.id
-        ).first()
-        
-        if not kb:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Knowledge base {request.kb_id} not found",
-            )
-        
+        kb = require_kb_for_user(db, request.kb_uuid, current_user.id)
+
         embeddings = create_user_embeddings(db, current_user.id)
-        
+
         vector_store = VectorStoreFactory.create(
             store_type=settings.VECTOR_STORE_TYPE,
-            collection_name=f"kb_{request.kb_id}",
+            collection_name=f"kb_{kb.id}",
             embedding_function=embeddings,
         )
         

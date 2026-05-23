@@ -44,7 +44,7 @@ export default function NewKnowledgeBasePage() {
         icon_color: iconColor,
       });
 
-      router.push(`/dashboard/knowledge/${data.id}`);
+      router.push(`/dashboard/knowledge/${data.uuid}`);
     } catch (error) {
       console.error("Failed to create knowledge base:", error);
       if (error instanceof ApiError) {

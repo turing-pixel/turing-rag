@@ -126,8 +126,6 @@ Scanned PDFs without a text layer may parse poorly; prefer text-based exports wh
 - **Privacy** — Only upload data you are allowed to store; retention and compliance depend on how your org hosts the system.
 - **Support** — Login, upload, or quality issues: contact whoever deployed the instance (not this GitHub repo unless you self-host).
 
-Screenshots (Chinese README): [README.zh-CN.md#界面截图](README.zh-CN.md#界面截图).
-
 ---
 
 ## For developers
@@ -333,7 +331,7 @@ Production checklist:
 | [docs/ADD_DOCUMENT_FLOW.md](docs/ADD_DOCUMENT_FLOW.md) | Upload → chunk → embed pipeline |
 | [docs/tutorial/README.md](docs/tutorial/README.md) | RAG tutorial (Chinese) |
 | [docs/blog/deploy-local.md](docs/blog/deploy-local.md) | Local deployment notes |
-| [README.zh-CN.md](README.zh-CN.md) | 中文说明与界面截图 |
+| [README.zh-CN.md](README.zh-CN.md) | Chinese documentation |
 
 ### Upstream & license
 

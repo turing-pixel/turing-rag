@@ -23,7 +23,12 @@ from app.services.chat_message_ops import (
 )
 from app.services.chat_list_service import build_chat_summaries
 from app.services.chat_resolve import require_chat_for_user
-from app.schemas.chat_mappers import chat_to_response, message_to_response
+from app.services.kb_resolve import get_kb_for_user
+from app.schemas.chat_mappers import (
+    chat_to_response_with_sources,
+    message_to_response,
+)
+from app.services.message_retrieval_persistence import load_sources_by_message_id
 from app.schemas.llm import LlmModelsListResponse, LlmProviderOptionResponse, LlmModelOptionResponse
 from app.core.security import get_current_user
 from app.services.chat_service import generate_response
@@ -35,6 +40,23 @@ from app.services.llm.llm_models import (
 )
 
 router = APIRouter()
+
+
+def _knowledge_bases_from_uuids(
+    db: Session, refs: List[str], user_id: int
+) -> List[KnowledgeBase]:
+    if not refs:
+        return []
+    bases: List[KnowledgeBase] = []
+    for ref in refs:
+        kb = get_kb_for_user(db, ref, user_id)
+        if not kb:
+            raise HTTPException(
+                status_code=400,
+                detail="One or more knowledge bases not found",
+            )
+        bases.append(kb)
+    return bases
 
 
 def _apply_runtime_to_chat(chat: Chat, runtime: ResolvedLlmRuntime) -> None:
@@ -132,7 +154,7 @@ def get_or_create_workspace_chat(
         .first()
     )
     if chat is not None:
-        return chat_to_response(chat)
+        return chat_to_response_with_sources(db, chat)
 
     default_provider, default_model = get_default_llm_config(db, current_user.id)
     runtime = _resolve_chat_llm_runtime(
@@ -146,7 +168,7 @@ def get_or_create_workspace_chat(
     db.add(chat)
     db.commit()
     db.refresh(chat)
-    return chat_to_response(chat)
+    return chat_to_response_with_sources(db, chat)
 
 
 @router.post("", response_model=ChatResponse)
@@ -156,19 +178,9 @@ def create_chat(
     chat_in: ChatCreate,
     current_user: User = Depends(get_current_user)
 ) -> Any:
-    knowledge_bases = (
-        db.query(KnowledgeBase)
-        .filter(
-            KnowledgeBase.id.in_(chat_in.knowledge_base_ids),
-            KnowledgeBase.user_id == current_user.id
-        )
-        .all()
+    knowledge_bases = _knowledge_bases_from_uuids(
+        db, chat_in.knowledge_base_uuids, current_user.id
     )
-    if len(knowledge_bases) != len(chat_in.knowledge_base_ids):
-        raise HTTPException(
-            status_code=400,
-            detail="One or more knowledge bases not found"
-        )
 
     runtime = _resolve_chat_llm_runtime(
         db,
@@ -188,7 +200,7 @@ def create_chat(
     db.add(chat)
     db.commit()
     db.refresh(chat)
-    return chat_to_response(chat)
+    return chat_to_response_with_sources(db, chat)
 
 @router.get("", response_model=List[ChatSummaryResponse])
 def get_chats(
@@ -201,34 +213,34 @@ def get_chats(
         db, user_id=current_user.id, skip=skip, limit=limit
     )
 
-@router.get("/{chat_id}", response_model=ChatResponse)
+@router.get("/{chat_uuid}", response_model=ChatResponse)
 def get_chat(
     *,
     db: Session = Depends(get_db),
-    chat_id: str,
+    chat_uuid: str,
     current_user: User = Depends(get_current_user)
 ) -> Any:
     chat = require_chat_for_user(
         db,
-        chat_id,
+        chat_uuid,
         current_user.id,
         load_knowledge_bases=True,
         load_messages=True,
     )
-    return chat_to_response(chat)
+    return chat_to_response_with_sources(db, chat)
 
 
-@router.patch("/{chat_id}", response_model=ChatResponse)
+@router.patch("/{chat_uuid}", response_model=ChatResponse)
 def update_chat(
     *,
     db: Session = Depends(get_db),
-    chat_id: str,
+    chat_uuid: str,
     chat_in: ChatUpdate,
     current_user: User = Depends(get_current_user),
 ) -> Any:
     chat = require_chat_for_user(
         db,
-        chat_id,
+        chat_uuid,
         current_user.id,
         load_knowledge_bases=True,
     )
@@ -236,21 +248,10 @@ def update_chat(
     if chat_in.title is not None:
         chat.title = chat_in.title
 
-    if chat_in.knowledge_base_ids is not None:
-        knowledge_bases = (
-            db.query(KnowledgeBase)
-            .filter(
-                KnowledgeBase.id.in_(chat_in.knowledge_base_ids),
-                KnowledgeBase.user_id == current_user.id,
-            )
-            .all()
+    if chat_in.knowledge_base_uuids is not None:
+        chat.knowledge_bases = _knowledge_bases_from_uuids(
+            db, chat_in.knowledge_base_uuids, current_user.id
         )
-        if len(knowledge_bases) != len(chat_in.knowledge_base_ids):
-            raise HTTPException(
-                status_code=400,
-                detail="One or more knowledge bases not found",
-            )
-        chat.knowledge_bases = knowledge_bases
 
     llm_fields = {"llm_config_id", "llm_provider", "llm_model"}
     if llm_fields.intersection(chat_in.model_fields_set):
@@ -278,31 +279,21 @@ def update_chat(
     db.add(chat)
     db.commit()
     db.refresh(chat)
-    return chat_to_response(chat)
+    return chat_to_response_with_sources(db, chat)
 
 def _parse_message_content(body: SendMessageRequest | dict) -> str:
     if isinstance(body, SendMessageRequest):
         return body.content.strip()
-    if isinstance(body, dict):
-        if body.get("content"):
-            return str(body["content"]).strip()
-        legacy = body.get("messages")
-        if isinstance(legacy, list) and legacy:
-            last = legacy[-1]
-            if not isinstance(last, dict) or last.get("role") != "user":
-                raise HTTPException(
-                    status_code=400,
-                    detail="Last message must be from user",
-                )
-            return str(last.get("content", "")).strip()
+    if isinstance(body, dict) and body.get("content"):
+        return str(body["content"]).strip()
     raise HTTPException(status_code=400, detail="content is required")
 
 
-@router.patch("/{chat_id}/messages/{message_id}", response_model=MessageResponse)
+@router.patch("/{chat_uuid}/messages/{message_id}", response_model=MessageResponse)
 def update_message(
     *,
     db: Session = Depends(get_db),
-    chat_id: str,
+    chat_uuid: str,
     message_id: int,
     body: MessageUpdate,
     current_user: User = Depends(get_current_user),
@@ -310,7 +301,7 @@ def update_message(
     if not body.model_fields_set:
         raise HTTPException(status_code=400, detail="No fields to update")
 
-    chat = require_chat_for_user(db, chat_id, current_user.id)
+    chat = require_chat_for_user(db, chat_uuid, current_user.id)
     message = get_owned_message(
         db,
         chat_id=chat.id,
@@ -345,20 +336,25 @@ def update_message(
     db.add(message)
     db.commit()
     db.refresh(message)
-    return message_to_response(message, chat.uuid)
+    sources = (
+        load_sources_by_message_id(db, [message.id]).get(message.id, [])
+        if message.role == "assistant"
+        else []
+    )
+    return message_to_response(message, chat.uuid, sources=sources)
 
 
-@router.post("/{chat_id}/messages/{message_id}/regenerate")
+@router.post("/{chat_uuid}/messages/{message_id}/regenerate")
 async def regenerate_message(
     request: Request,
     *,
     db: Session = Depends(get_db),
-    chat_id: str,
+    chat_uuid: str,
     message_id: int,
     current_user: User = Depends(get_current_user),
 ) -> StreamingResponse:
     chat = require_chat_for_user(
-        db, chat_id, current_user.id, load_knowledge_bases=True
+        db, chat_uuid, current_user.id, load_knowledge_bases=True
     )
     message = get_owned_message(
         db,
@@ -421,17 +417,17 @@ async def regenerate_message(
     )
 
 
-@router.post("/{chat_id}/messages")
+@router.post("/{chat_uuid}/messages")
 async def create_message(
     request: Request,
     *,
     db: Session = Depends(get_db),
-    chat_id: str,
+    chat_uuid: str,
     body: SendMessageRequest,
     current_user: User = Depends(get_current_user)
 ) -> StreamingResponse:
     chat = require_chat_for_user(
-        db, chat_id, current_user.id, load_knowledge_bases=True
+        db, chat_uuid, current_user.id, load_knowledge_bases=True
     )
 
     query = _parse_message_content(body)
@@ -470,14 +466,14 @@ async def create_message(
         },
     )
 
-@router.delete("/{chat_id}")
+@router.delete("/{chat_uuid}")
 def delete_chat(
     *,
     db: Session = Depends(get_db),
-    chat_id: str,
+    chat_uuid: str,
     current_user: User = Depends(get_current_user)
 ) -> Any:
-    chat = require_chat_for_user(db, chat_id, current_user.id)
+    chat = require_chat_for_user(db, chat_uuid, current_user.id)
 
     db.delete(chat)
     db.commit()

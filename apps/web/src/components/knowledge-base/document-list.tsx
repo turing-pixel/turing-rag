@@ -96,7 +96,7 @@ interface Document {
 }
 
 interface DocumentListProps {
-  knowledgeBaseId: number;
+  knowledgeBaseUuid: string;
 }
 
 function formatFileSize(bytes: number): string {
@@ -538,7 +538,7 @@ function DocumentGrid({
   );
 }
 
-export function DocumentList({ knowledgeBaseId }: DocumentListProps) {
+export function DocumentList({ knowledgeBaseUuid }: DocumentListProps) {
   const t = useTranslations("documentList");
   const tStatus = useTranslations("processingStatus");
   const locale = useLocale();
@@ -627,7 +627,7 @@ export function DocumentList({ knowledgeBaseId }: DocumentListProps) {
 
   const startTaskPoll = (docId: number, taskId: number) => {
     runProcessingPoll({
-      knowledgeBaseId,
+      knowledgeBaseUuid,
       taskIds: [taskId],
       uploadIdByTaskId: new Map([[taskId, 0]]),
       shouldAbort: () => pollAbortRef.current,
@@ -675,7 +675,7 @@ export function DocumentList({ knowledgeBaseId }: DocumentListProps) {
     setReprocessingId(doc.id);
     try {
       const result = (await api.post(
-        `/api/knowledge-base/${knowledgeBaseId}/documents/${doc.id}/reprocess`
+        `/api/knowledge-base/${knowledgeBaseUuid}/documents/${doc.id}/reprocess`
       )) as { task_id: number; document_id: number };
       mergeTaskIntoDocument(doc.id, result.task_id, {
         status: "pending",
@@ -702,7 +702,7 @@ export function DocumentList({ knowledgeBaseId }: DocumentListProps) {
     setDeletingId(deleteTarget.id);
     try {
       await api.delete(
-        `/api/knowledge-base/${knowledgeBaseId}/documents/${deleteTarget.id}`
+        `/api/knowledge-base/${knowledgeBaseUuid}/documents/${deleteTarget.id}`
       );
       setDocuments((prev) => prev.filter((d) => d.id !== deleteTarget.id));
       toast.success(t("deleteSuccess"));
@@ -733,7 +733,7 @@ export function DocumentList({ knowledgeBaseId }: DocumentListProps) {
   useEffect(() => {
     const fetchDocuments = async () => {
       try {
-        const data = await api.get(`/api/knowledge-base/${knowledgeBaseId}`);
+        const data = await api.get(`/api/knowledge-base/${knowledgeBaseUuid}`);
         setDocuments(data.documents);
       } catch (err) {
         if (err instanceof ApiError) {
@@ -747,7 +747,7 @@ export function DocumentList({ knowledgeBaseId }: DocumentListProps) {
     };
 
     fetchDocuments();
-  }, [knowledgeBaseId, t]);
+  }, [knowledgeBaseUuid, t]);
 
   if (loading) {
     return <DocumentListSkeleton />;
@@ -854,7 +854,7 @@ export function DocumentList({ knowledgeBaseId }: DocumentListProps) {
     </div>
 
     <DocumentDetailDialog
-      knowledgeBaseId={knowledgeBaseId}
+      knowledgeBaseUuid={knowledgeBaseUuid}
       documentId={detailDocId}
       open={detailOpen}
       onOpenChange={(open) => {

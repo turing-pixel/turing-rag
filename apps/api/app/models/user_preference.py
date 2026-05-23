@@ -12,7 +12,9 @@ class UserPreference(Base, TimestampMixin):
 
     __tablename__ = "user_preferences"
 
-    user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
     default_llm_source = Column(String(20), nullable=False, default=DEFAULT_SOURCE_ENV)
     default_llm_config_id = Column(
         Integer, ForeignKey("llm_configs.id", ondelete="SET NULL"), nullable=True

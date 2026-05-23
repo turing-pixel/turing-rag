@@ -10,6 +10,7 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { api } from "@/lib/api";
+import { kbRefFromMetadata } from "@/lib/kb-ref";
 import {
   CitationInvalidReference,
   CitationReference,
@@ -56,10 +57,10 @@ export const Answer: FC<{
     const currentKeys = new Set(
       debouncedCitations
         .map((citation) => {
-          const kbId = citation.metadata.kb_id;
+          const kbRef = kbRefFromMetadata(citation.metadata);
           const documentId = citation.metadata.document_id;
-          if (kbId == null || documentId == null) return null;
-          return `${kbId}-${documentId}`;
+          if (kbRef == null || documentId == null) return null;
+          return `${kbRef}-${documentId}`;
         })
         .filter((key): key is string => key != null)
     );
@@ -77,17 +78,17 @@ export const Answer: FC<{
       const failedKeys = new Set<string>();
 
       for (const citation of debouncedCitations) {
-        const kbId = citation.metadata.kb_id;
+        const kbRef = kbRefFromMetadata(citation.metadata);
         const documentId = citation.metadata.document_id;
-        if (kbId == null || documentId == null) continue;
+        if (kbRef == null || documentId == null) continue;
 
-        const key = `${kbId}-${documentId}`;
+        const key = `${kbRef}-${documentId}`;
         if (infoMap[key] || failedKeys.has(key)) continue;
 
         try {
           const [kb, doc] = await Promise.all([
-            api.get(`/api/knowledge-base/${kbId}`),
-            api.get(`/api/knowledge-base/${kbId}/documents/${documentId}`),
+            api.get(`/api/knowledge-base/${kbRef}`),
+            api.get(`/api/knowledge-base/${kbRef}/documents/${documentId}`),
           ]);
 
           infoMap[key] = {
@@ -137,7 +138,11 @@ export const Answer: FC<{
         );
       }
 
-      const citationKey = `${citation.metadata.kb_id}-${citation.metadata.document_id}`;
+      const kbRef = kbRefFromMetadata(citation.metadata);
+      const citationKey =
+        kbRef != null && citation.metadata.document_id != null
+          ? `${kbRef}-${citation.metadata.document_id}`
+          : "";
       const citationInfo = citationInfoMap[citationKey];
       const citationLoadFailed = citationFailedKeys.has(citationKey);
 
@@ -160,12 +165,17 @@ export const Answer: FC<{
   }
 
   return (
-    <div className="chat-assistant-markdown max-w-full">
+    <div className="chat-assistant-markdown min-w-0 max-w-full">
       <Markdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeHighlight]}
         components={{
           a: CitationLink,
+          table: ({ children, ...props }) => (
+            <div className="chat-markdown-table-wrap">
+              <table {...props}>{children}</table>
+            </div>
+          ),
         }}
       >
         {processedMarkdown}

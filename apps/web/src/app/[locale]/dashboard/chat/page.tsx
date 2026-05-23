@@ -16,7 +16,7 @@ function ChatIndexRedirect() {
       try {
         const workspace = await loadWorkspaceChat();
         if (cancelled) return;
-        router.replace(chatConversationPath(workspace.id, searchParams));
+        router.replace(chatConversationPath(workspace.uuid, searchParams));
       } catch {
         if (!cancelled) {
           router.replace("/dashboard");

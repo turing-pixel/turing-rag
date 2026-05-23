@@ -54,6 +54,7 @@ export function buildRetrievalSteps(
   const docCount = stream.documents.length;
   const recalled = stream.recalledCount ?? docCount;
   const selected = stream.selectedCount ?? stream.count ?? docCount;
+  const lowConfidence = stream.lowConfidence;
 
   const rewriteSkipped = !stream.rewriteAttempted && idx >= phaseIndex("search");
   const rewriteDone =
@@ -118,7 +119,7 @@ export function buildRetrievalSteps(
       status: status(
         rankDone,
         rankActive,
-        rankDone && selected === 0 && recalled === 0
+        rankDone && lowConfidence && selected === 0
       ),
     },
     {

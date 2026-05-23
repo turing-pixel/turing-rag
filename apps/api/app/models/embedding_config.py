@@ -7,8 +7,10 @@ from app.models.base import Base, TimestampMixin
 class EmbeddingConfig(Base, TimestampMixin):
     __tablename__ = "embedding_configs"
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    id = Column(Integer, primary_key=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     name = Column(String(255), nullable=False)
     provider = Column(String(50), nullable=False)
     model = Column(String(255), nullable=False)

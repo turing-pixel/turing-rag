@@ -12,6 +12,7 @@ import {
   Bot,
   GitBranch,
   Binary,
+  User,
 } from "lucide-react";
 
 import { Link, usePathname, useRouter } from "@/i18n/navigation";
@@ -44,9 +45,10 @@ type NavItemKey =
   | "rag"
   | "llmConfigs"
   | "embeddingConfigs"
-  | "apiKeys";
+  | "apiKeys"
+  | "account";
 
-type NavGroupLabelKey = "groupKnowledge" | "groupSettings";
+type NavGroupLabelKey = "groupKnowledge" | "groupSettings" | "groupAccount";
 
 const DASHBOARD_NAV_GROUPS: {
   labelKey?: NavGroupLabelKey;
@@ -79,6 +81,12 @@ const DASHBOARD_NAV_GROUPS: {
         icon: Binary,
       },
       { nameKey: "apiKeys", href: "/dashboard/api-keys", icon: Key },
+    ],
+  },
+  {
+    labelKey: "groupAccount",
+    items: [
+      { nameKey: "account", href: "/dashboard/account", icon: User },
     ],
   },
 ];

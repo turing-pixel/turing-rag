@@ -8,7 +8,7 @@ export type PersistedProcessingTask = {
 };
 
 export type PersistedProcessingJob = {
-  knowledgeBaseId: number;
+  knowledgeBaseUuid: string;
   tasks: PersistedProcessingTask[];
   startedAt: number;
 };
@@ -29,7 +29,7 @@ export function loadProcessingJob(): PersistedProcessingJob | null {
     if (!raw) return null;
     const job = JSON.parse(raw) as PersistedProcessingJob;
     if (
-      !job?.knowledgeBaseId ||
+      !job?.knowledgeBaseUuid ||
       !Array.isArray(job.tasks) ||
       job.tasks.length === 0
     ) {

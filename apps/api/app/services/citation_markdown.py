@@ -2,8 +2,6 @@
 
 import re
 
-LLM_RESPONSE_SEPARATOR = "__LLM_RESPONSE__"
-
 _MULTI_CITATION_RE = re.compile(r"\[(\d+(?:\s*[,，]\s*\d+)+)\]")
 _BARE_CITATION_RE = re.compile(r"(?<![\w])\[(\d+)\](?!\()")
 
@@ -38,10 +36,4 @@ def normalize_citation_markdown(text: str) -> str:
 
 
 def normalize_assistant_response(content: str) -> str:
-    if LLM_RESPONSE_SEPARATOR not in content:
-        return normalize_citation_markdown(content)
-
-    base64_part, response_text = content.split(LLM_RESPONSE_SEPARATOR, 1)
-    return base64_part + LLM_RESPONSE_SEPARATOR + normalize_citation_markdown(
-        response_text
-    )
+    return normalize_citation_markdown(content)

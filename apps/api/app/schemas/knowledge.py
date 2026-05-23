@@ -86,36 +86,27 @@ class ProcessingTaskCreate(ProcessingTaskBase):
 class ProcessingTask(ProcessingTaskBase):
     id: int
     document_id: Optional[int] = None
-    knowledge_base_id: int
+    knowledge_base_uuid: str
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
 
 class DocumentResponse(DocumentBase):
     id: int
-    knowledge_base_id: int
+    knowledge_base_uuid: str
     created_at: datetime
     updated_at: datetime
     processing_tasks: List[ProcessingTask] = []
-
-    class Config:
-        from_attributes = True
 
 
 class DocumentDetailResponse(DocumentResponse):
     chunk_count: int = 0
 
 class KnowledgeBaseResponse(KnowledgeBaseBase):
-    id: int
-    user_id: int
+    uuid: str
     created_at: datetime
     updated_at: datetime
     documents: List[DocumentResponse] = []
-
-    class Config:
-        from_attributes = True
 
 class PreviewRequest(BaseModel):
     document_ids: List[int]

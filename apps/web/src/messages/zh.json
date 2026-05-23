@@ -85,6 +85,8 @@
       "rag": "RAG 流程",
       "groupKnowledge": "知识与检索",
       "groupSettings": "模型与访问",
+      "groupAccount": "账户",
+      "account": "个人资料",
       "signOut": "退出登录",
       "logoAlt": "Logo"
     },
@@ -101,7 +103,8 @@
         "llm-configs": "对话模型",
         "embedding-configs": "向量模型",
         "test-retrieval": "试检索",
-        "rag": "RAG 流程"
+        "rag": "RAG 流程",
+        "account": "个人资料"
       }
     },
     "rag": {
@@ -181,7 +184,7 @@
         },
         "userMessage": {
           "title": "用户消息",
-          "subtitle": "POST /api/chat/:id/messages",
+          "subtitle": "POST /api/chat/:chat_uuid/messages",
           "detail": "SSE 流式 generate_response"
         },
         "resolveLlm": {
@@ -248,6 +251,7 @@
     "listSubtitle": "查看与管理历史会话",
     "startNewChat": "新建会话",
     "searchPlaceholder": "搜索会话...",
+    "searchAria": "搜索会话",
     "searchNoResults": "没有匹配的会话。",
     "messagesMeta": "{count} 条消息",
     "emptyTitle": "暂无会话",
@@ -294,6 +298,8 @@
     "retrievalSearchQuery": "检索问题：",
     "retrievalResults": "已找到 {count} 条相关片段",
     "retrievalSourcesUsed": "引用 {count} 个来源",
+    "retrievalScoreLabel": "检索分数",
+    "retrievalBestScore": "最佳分数：{score}",
     "retrievalSourcesToggleAria": "展开或收起引用来源",
     "retrievalMoreSources": "另有 {count} 条",
     "retrievalUnknownDocument": "未命名文档",
@@ -313,6 +319,7 @@
     "retrievalStep_rank_done": "选用 {selected} 条（自 {recalled} 条中去重 {pruned} 条）",
     "retrievalStep_rank_doneSimple": "选用 {selected} 条片段作为上下文",
     "retrievalStep_rank_doneEmpty": "未选用任何片段",
+    "retrievalStep_rank_lowConfidence": "未找到足够可靠的支撑片段",
     "retrievalStep_rank_fragments": "已选用 {count} 条片段",
     "retrievalStep_generate_title": "生成回答",
     "retrievalStep_generate_active": "正在生成回答…",
@@ -345,6 +352,8 @@
     "welcomeDescription": "就「{kb}」提问，助手会基于知识库内容回答。",
     "welcomeDescriptionNoKb": "输入消息开始对话。",
     "messageActionsLabel": "消息操作",
+    "historySidebarCollapse": "收起会话列表",
+    "historySidebarExpand": "展开会话列表",
     "copyMessage": "复制",
     "copiedMessage": "已复制",
     "regenerateMessage": "重新生成",
@@ -474,6 +483,36 @@
     "reindexHint": "切换向量模型或维度后，请重新处理知识库中的文档。",
     "envDefaultReadOnlyBadge": "只读",
     "envDefaultDisplayName": "系统默认"
+  },
+  "accountPage": {
+    "title": "个人资料",
+    "description": "管理账户信息，并查看默认模型偏好设置。",
+    "profileSection": "账户信息",
+    "profileDescription": "可更新邮箱、用户名或密码。",
+    "preferencesSection": "偏好设置",
+    "preferencesDescription": "新建会话时使用的默认对话与向量模型。可在模型配置页面修改。",
+    "email": "邮箱",
+    "username": "用户名",
+    "password": "新密码",
+    "passwordPlaceholder": "留空表示不修改密码",
+    "uuid": "用户 ID",
+    "role": "角色",
+    "roleAdmin": "管理员",
+    "roleUser": "普通用户",
+    "status": "状态",
+    "statusActive": "已启用",
+    "statusInactive": "已停用",
+    "memberSince": "注册时间",
+    "save": "保存修改",
+    "saving": "保存中...",
+    "defaultLlm": "默认对话模型",
+    "defaultEmbedding": "默认向量模型",
+    "sourceEnv": "系统默认",
+    "sourceConfig": "自定义配置",
+    "notConfigured": "未配置",
+    "manageLlm": "管理对话模型",
+    "manageEmbedding": "管理向量模型",
+    "providerModel": "{provider} / {model}"
   },
   "apiKeysPage": {
     "title": "API 密钥",
@@ -728,6 +767,9 @@
     "testRetrievalMissing": "请输入检索内容",
     "testRetrievalError": "试检索失败",
     "testRetrievalSuccess": "检索完成",
+    "accountLoadError": "加载个人资料失败",
+    "accountUpdateSuccess": "个人资料已更新",
+    "accountUpdateError": "更新个人资料失败",
     "apiKeysLoadError": "获取 API 密钥失败",
     "apiKeyNameRequired": "请填写 API 密钥名称",
     "apiKeyCreateSuccess": "API 密钥已创建",
