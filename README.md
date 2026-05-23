@@ -1,338 +1,372 @@
 # Knowledge Base & Chat
 
 <div align="center">
-  <p><strong>RAG-powered knowledge base Q&A — upload your docs, ask in natural language, answers with citations</strong></p>
+  <p><strong>Self-hosted RAG knowledge base Q&A with citations, retrieval progress, and configurable models.</strong></p>
   <p>
     <a href="LICENSE">Apache License 2.0</a>
     · <strong>English</strong> | <a href="README.zh-CN.md">简体中文</a>
   </p>
 </div>
 
-## Table of contents
+## What This Is
 
-**Everyone**
+This repository is a self-hostable RAG web application. Users create knowledge bases, upload documents, ask questions in chat, and verify answers through citations and retrieval status.
 
-- [At a glance](#at-a-glance)
-- [How it works](#how-it-works)
+It is a pnpm + Turborepo monorepo:
 
-**End users**
+- `apps/web`: Next.js App Router dashboard, chat UI, i18n, model settings, knowledge-base management.
+- `apps/api`: FastAPI, SQLAlchemy, Alembic, document ingestion, vector retrieval, chat streaming.
+- PostgreSQL stores metadata.
+- MinIO stores uploaded files.
+- Chroma or Qdrant stores vectors.
+- LLM and embedding providers are configurable through environment variables and the dashboard.
 
-- [For end users](#for-end-users)
-- [Using the web app](#using-the-web-app)
-- [Supported documents](#supported-documents)
-- [Tips & limitations](#tips--limitations)
+## Product Features
 
-**Developers**
+- Knowledge-base CRUD with icons/colors.
+- Upload PDF, DOCX, Markdown, and text files.
+- Preview chunks before processing.
+- Background document parsing, chunking, embedding, retry, and reprocess.
+- Multi-knowledge-base chat.
+- Streaming assistant responses.
+- Retrieval status panel: query rewrite, search, recall, selection, and generation.
+- Citations with source snippets.
+- User-level LLM and embedding configurations.
+- API keys for server-to-server retrieval.
+- English and Chinese UI.
 
-- [For developers](#for-developers)
-- [Architecture](#architecture)
-- [Quick start (Docker)](#quick-start-docker)
-- [Local development](#local-development)
-- [Project structure](#project-structure)
-- [Configuration](#configuration)
-- [API integration](#api-integration)
-- [Deployment](#deployment)
-- [Further reading](#further-reading)
-- [Upstream & license](#upstream--license)
-
----
-
-## At a glance
-
-| Audience | You get |
-|----------|---------|
-| **End users** | A web app to upload PDF/Word/Markdown/text, chat against your libraries, see citations and retrieval progress — no ML jargon required |
-| **Developers** | A self-hostable monorepo (Next.js + FastAPI), pluggable LLM/embedding providers, Chroma or Qdrant, OpenAPI retrieval, Docker and `pnpm dev` workflows |
-
----
-
-## How it works
+## How RAG Works
 
 ```mermaid
 flowchart LR
-  A[Upload documents] --> B[Parse, chunk, embed]
-  C[User asks a question] --> D[Retrieve relevant chunks]
-  B --> D
-  D --> E[LLM generates answer]
-  E --> F[Citations & source preview]
+  A["Upload documents"] --> B["Parse and chunk"]
+  B --> C["Create embeddings"]
+  C --> D["Store vectors"]
+  E["Ask in chat"] --> F["Rewrite query if needed"]
+  F --> G["Retrieve chunks from selected KBs"]
+  G --> H["Select context and stream retrieval status"]
+  H --> I["LLM generates answer"]
+  I --> J["Render answer with citations"]
 ```
 
-1. Documents are parsed, split into chunks, and stored in a vector database.
-2. Each question retrieves the most relevant chunks from selected knowledge bases.
-3. A chat model composes the answer; the UI can show **citation markers**, **source snippets**, and a **retrieval status** stream while searching.
-
----
-
-## For end users
-
-### What you can do
-
-- **Knowledge bases** — Organize content by topic (e.g. HR policies, product manuals).
-- **Document Q&A** — Ask in everyday language; answers prefer **your uploaded files**, not the open web.
-- **Multi-turn chat** — Follow up in the same conversation; pick one or more knowledge bases per chat.
-- **Trust but verify** — Click citation numbers to open source previews when the model references a document.
-- **Languages** — Switch UI between English and Chinese (`/en` … or `/zh` … in the URL, or the locale switcher in the header).
-
-### Typical workflows
-
-| Goal | Steps |
-|------|--------|
-| Build a library | Dashboard → **Knowledge bases** → create → **Upload** → wait until processing finishes |
-| Test retrieval | Open a knowledge base → **Test retrieval** → try queries without chatting |
-| Ask questions | **Chat** → new conversation → select knowledge bases → type and send |
-| Integrate another app | **API keys** → create a key → call the OpenAPI retrieval endpoint (see [API integration](#api-integration)) |
-
-Administrators may also configure **LLM** and **Embedding** models under **Model settings** (or via server `.env` before first login).
-
-### Using the web app
-
-After your team provides a URL (e.g. `https://app.example.com` or `http://localhost:3000`):
-
-1. **Register / sign in** — Account is per deployment; there is no shared cloud tenant.
-2. **Create a knowledge base** — Name it and optionally set icon/color.
-3. **Upload files** — Drag-and-drop or file picker; wait for status **completed** before expecting good answers.
-4. **Optional: preview chunks** — During upload you can preview how text will be split (chunk size / overlap).
-5. **Start a chat** — Choose knowledge bases, ask questions; watch the retrieval panel for search progress and matched documents.
-6. **Regenerate or give feedback** — On assistant messages you can regenerate a reply or submit thumbs up/down when enabled.
-
-**Main areas**
-
-| Area | Path (after locale) | Purpose |
-|------|---------------------|---------|
-| Overview | `/dashboard` | Entry hub |
-| Knowledge bases | `/dashboard/knowledge` | Libraries, documents, upload, processing status |
-| Chat | `/dashboard/chat` | RAG conversations, citations, streaming |
-| RAG flow | `/dashboard/rag` | Visual / educational RAG overview |
-| LLM configs | `/dashboard/llm-configs` | Chat models (multi-provider, verify & default) |
-| Embedding configs | `/dashboard/embedding-configs` | Embedding models (changing model may require re-indexing) |
-| API keys | `/dashboard/api-keys` | Keys for programmatic retrieval |
-
-### Supported documents
-
-| Format | Extension | Max size (UI) |
-|--------|-----------|----------------|
-| PDF | `.pdf` | 50 MB per file |
-| Word | `.docx` | 50 MB per file |
-| Markdown | `.md` | 50 MB per file |
-| Plain text | `.txt` | 50 MB per file |
-
-Scanned PDFs without a text layer may parse poorly; prefer text-based exports when possible.
-
-### Tips & limitations
-
-- **Wait for indexing** — Questions work best after document processing shows **completed**.
-- **Check citations** — For numbers, dates, legal/medical/financial content, confirm against the original file.
-- **Model mistakes** — LLMs can hallucinate or miss context; retrieval improves grounding but does not guarantee correctness.
-- **Privacy** — Only upload data you are allowed to store; retention and compliance depend on how your org hosts the system.
-- **Support** — Login, upload, or quality issues: contact whoever deployed the instance (not this GitHub repo unless you self-host).
-
----
-
-## For developers
-
-This repo is a **pnpm + Turborepo monorepo**: `apps/web` (Next.js 14, App Router, `next-intl`) and `apps/api` (FastAPI, LangChain, Alembic). Metadata lives in **PostgreSQL**; files in **MinIO**; vectors in **Chroma** (default) or **Qdrant**.
-
-Forked from [rag-web-ui/rag-web-ui](https://github.com/rag-web-ui/rag-web-ui) with PostgreSQL, unified `CHAT_*` / `EMBEDDINGS_*` env vars, dashboard model configuration, retrieval streaming UI, and related changes.
-
-### Architecture
+## Architecture
 
 ```mermaid
 flowchart TB
-  subgraph client["Browser"]
-    Web["Next.js apps/web"]
+  subgraph Browser
+    Web["apps/web\nNext.js App Router"]
   end
-  subgraph api["FastAPI apps/api"]
-    Auth["JWT auth"]
-    KB["Knowledge bases & documents"]
-    Chat["Chat + RAG pipeline"]
-    Open["OpenAPI /openapi"]
+
+  subgraph API["apps/api\nFastAPI"]
+    Auth["JWT Auth"]
+    KB["Knowledge Base API"]
+    Docs["Document Pipeline"]
+    Chat["Chat + RAG Stream"]
+    OpenAPI["API-key Retrieval\n/openapi"]
+    Configs["LLM / Embedding Configs"]
   end
-  subgraph data["Data layer"]
+
+  subgraph Data
     PG[(PostgreSQL)]
     MinIO[(MinIO)]
-    VS[(Chroma / Qdrant)]
+    Vector[(Chroma / Qdrant)]
   end
-  subgraph external["External"]
-    LLM["Chat LLM providers"]
-    EMB["Embedding providers"]
+
+  subgraph Providers
+    LLM["Chat LLM"]
+    EMB["Embedding Model"]
   end
+
   Web --> Auth
   Web --> KB
   Web --> Chat
-  Open --> VS
-  KB --> PG
-  KB --> MinIO
-  KB --> EMB
-  Chat --> VS
+  Web --> Configs
+  KB --> Docs
+  Docs --> MinIO
+  Docs --> EMB
+  Docs --> Vector
+  Chat --> Vector
   Chat --> LLM
   Chat --> PG
+  OpenAPI --> Vector
+  Auth --> PG
+  KB --> PG
+  Configs --> PG
 ```
 
-### Quick start (Docker)
+## Main Routes
 
-**Requirements:** Docker Compose v2+, 8 GB+ RAM recommended.
+Frontend routes include the locale prefix, for example `/en/dashboard/chat` or `/zh/dashboard/chat`.
+
+| Area | Frontend path |
+|---|---|
+| Dashboard | `/dashboard` |
+| Knowledge bases | `/dashboard/knowledge` |
+| Knowledge-base detail | `/dashboard/knowledge/:kb_uuid` |
+| Chat | `/dashboard/chat` |
+| Chat conversation | `/dashboard/chat/:chat_uuid` |
+| RAG flow | `/dashboard/rag` |
+| LLM configs | `/dashboard/llm-configs` |
+| Embedding configs | `/dashboard/embedding-configs` |
+| API keys | `/dashboard/api-keys` |
+| Account | `/dashboard/account` |
+
+Backend routes are mounted under `/api`, not `/api/v1`.
+
+| Area | Backend path |
+|---|---|
+| OpenAPI schema | `/api/openapi.json` |
+| Health | `/api/health` |
+| Auth | `/api/auth/*` |
+| Knowledge bases | `/api/knowledge-base/*` |
+| Chat | `/api/chat/*` |
+| LLM configs | `/api/llm-configs/*` |
+| Embedding configs | `/api/embedding-configs/*` |
+| API keys | `/api/api-keys/*` |
+| API-key retrieval | `/openapi/knowledge/:kb_uuid/query` |
+
+## Quick Start With Docker
+
+Requirements: Docker Compose v2+, 8 GB+ RAM recommended.
 
 ```bash
 git clone <your-repo-url>
 cd rag-web-ui
 cp .env.example .env
-# Set CHAT_PROVIDER, CHAT_API_KEY, EMBEDDINGS_PROVIDER, etc.
+# Edit CHAT_* / EMBEDDINGS_* / SECRET_KEY before production use.
 docker compose up -d --build
 ```
 
-| Service | Default URL |
-|---------|-------------|
-| Web UI | http://localhost:3000 |
+Default local URLs:
+
+| Service | URL |
+|---|---|
+| Web | http://localhost:3000 |
 | API | http://localhost:8000 |
-| API docs (ReDoc) | http://localhost:8000/redoc |
-| OpenAPI schema | http://localhost:8000/api/v1/openapi.json |
-| MinIO console | http://localhost:9001 (minioadmin / minioadmin) |
-| Chroma (host port) | http://localhost:8001 |
+| ReDoc | http://localhost:8000/redoc |
+| API schema | http://localhost:8000/api/openapi.json |
+| Health | http://localhost:8000/api/health |
+| MinIO console | http://localhost:9001 |
+| Chroma host port | http://localhost:8001 |
 
-Inside Compose, the API uses `CHROMA_URL=http://chromadb:8000`. For **Ollama** on the host, set `CHAT_API_BASE` / `EMBEDDINGS_API_BASE` to `http://host.docker.internal:11434` and pull models first (e.g. `deepseek-r1:7b`, `bge-m3`).
+Inside Docker Compose, the API uses `CHROMA_URL=http://chromadb:8000`.
 
-### Local development
+If chat or embeddings use host Ollama from Docker, set:
 
-**Requirements**
+```env
+CHAT_API_BASE=http://host.docker.internal:11434
+EMBEDDINGS_API_BASE=http://host.docker.internal:11434
+```
+
+## Local Development
+
+Requirements:
 
 | Tool | Version |
-|------|---------|
+|---|---|
 | Node.js | 18+ |
-| pnpm | 9.x (see root `packageManager`) |
-| Python | **3.11 or 3.12 only** (3.14 breaks Pydantic/LangChain here) |
-| Docker | Optional but typical for Postgres + MinIO |
+| pnpm | 9.x, see `packageManager` in `package.json` |
+| Python | 3.11 or 3.12 recommended |
+| Docker | Recommended for PostgreSQL and MinIO |
 
-**Recommended hybrid setup** — Run stateful services in Docker, apps on the host:
+Recommended hybrid setup:
 
 ```bash
 cp .env.example .env
-# Keep POSTGRES_SERVER=db, MINIO_ENDPOINT=minio:9000 — dev.sh rewrites to localhost
 
-docker compose up -d db minio   # Postgres :5432, MinIO :9000 / :9001
+docker compose up -d db minio
 
 pnpm install
-cd apps/api && python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt && cd ../..
+cd apps/api
+python3.12 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+cd ../..
 
-pnpm dev   # starts Chroma on 127.0.0.1:28100 + turbo dev (web :3000, API :8000)
+pnpm dev
 ```
 
-`apps/api/scripts/dev.sh` (used by turbo) automatically:
+`pnpm dev` starts local Chroma on `127.0.0.1:28100` and runs the web and API apps through Turbo. On macOS, prefer `127.0.0.1` over `localhost` for Chroma to avoid IPv6/IPv4 mismatch issues.
 
-- Runs `alembic upgrade head` on the host
-- Maps `POSTGRES_SERVER=db` → `localhost`
-- Maps `MINIO_ENDPOINT=minio:9000` → `localhost:9000`
-- Rewrites `CHROMA_URL` containing `chromadb` or `localhost` → `http://127.0.0.1:28100`
-
-Use **`127.0.0.1`** for Chroma on macOS (not `localhost`) to avoid IPv6/IPv4 mismatches and 502 errors.
+Useful commands:
 
 | Command | Description |
-|---------|-------------|
-| `pnpm dev` | Local Chroma (`./chroma_data`) + web + API |
-| `pnpm dev:chroma` | Chroma HTTP only |
-| `pnpm dev:chroma:stop` | Stop Chroma started by dev scripts |
-| `pnpm dev:app` | Web + API only (Chroma must already run) |
-| `pnpm build` | Production build (Turbo) |
+|---|---|
+| `pnpm dev` | Start Chroma + web + API |
+| `pnpm dev:chroma` | Start Chroma only |
+| `pnpm dev:chroma:stop` | Stop local Chroma |
+| `pnpm dev:app` | Start web + API only |
+| `pnpm build` | Build all packages |
 | `pnpm lint` | Lint all packages |
-| `pnpm test` / `pnpm test:ci` | Tests |
-| `pnpm reset-data` | Reset app data (destructive; API package) |
+| `pnpm test` | Run tests in watch mode where configured |
+| `pnpm test:ci` | Run CI-style tests |
+| `pnpm reset-data` | Reset app data, destructive |
 | `pnpm reset-data:dry-run` | Preview reset scope |
 
-**Environment files**
+## Configuration
 
-- Root **`.env`** — shared by API and documented defaults; Compose and `pnpm dev` read it.
-- **`apps/api/.env`** — optional overrides for backend only.
-- **`apps/web/.env.local`** — optional Next.js overrides (see `next.config.js`).
+Copy `.env.example` to `.env` for local development or `.env.production` for deployment.
 
-### Project structure
+### Chat Models
 
-```
-rag-web-ui/
-├── apps/
-│   ├── api/                 # FastAPI, Alembic, document pipeline, RAG chat
-│   │   ├── app/api/api_v1/  # REST: auth, knowledge, chat, llm/embedding configs
-│   │   ├── app/api/openapi/ # API-key retrieval
-│   │   └── scripts/         # dev.sh, reset_data.py
-│   └── web/                 # Next.js dashboard, chat UI, i18n (en/zh)
-├── docs/                    # Troubleshooting, embeddings guides, tutorials
-├── scripts/                 # dev-chroma.sh, dev-chroma-stop.sh
-├── docker-compose.yml       # Full dev stack (db, minio, chromadb, api, web)
-├── docker-compose.prod.yml  # Production images
-├── docker-compose.chroma.yml
-├── deploy.sh                # rsync + prod compose + migrations
-├── .env.example
-└── package.json             # Turborepo entry scripts
+Set:
+
+```env
+CHAT_PROVIDER=deepseek
+CHAT_API_KEY=your-api-key
+CHAT_API_BASE=https://api.deepseek.com
+CHAT_MODEL=deepseek-v4-flash
 ```
 
-### Configuration
+Supported patterns:
 
-Copy `.env.example` → `.env` (local) or `.env.production` (`./deploy.sh`).
+- Native providers: `openai`, `deepseek`, `minimax`, `ollama`.
+- OpenAI-compatible providers: `anthropic`, `google`, `qwen`, `kimi`, `mistral`, `azure`, `zhipu`, and others through custom base URLs.
+- Dashboard-managed configs are stored per user in PostgreSQL.
 
-**Chat (`CHAT_PROVIDER` + `CHAT_API_*`)**
+### Embeddings
 
-| Provider | Notes |
-|----------|--------|
-| `openai`, `deepseek`, `minimax`, `ollama` | Native integrations |
-| `anthropic`, `google`, `qwen`, `kimi`, `mistral`, `azure`, `zhipu`, … | OpenAI-compatible base URL |
-| Dashboard | Extra providers can be added under **LLM configs** (stored in DB) |
+Set:
 
-**Embeddings (`EMBEDDINGS_PROVIDER` + `EMBEDDINGS_API_*`)**
+```env
+EMBEDDINGS_PROVIDER=ollama
+EMBEDDINGS_API_BASE=http://localhost:11434
+EMBEDDINGS_MODEL=bge-m3
+```
 
-| Provider | Notes |
-|----------|--------|
-| `openai`, `ollama`, `dashscope`, `huggingface` | See `.env.example` for model names |
-| Dimension change | Switching embedding model requires **re-processing** documents |
+Supported providers:
 
-DeepSeek has **no** embedding API — use `ollama`, `openai`, or `huggingface` for `EMBEDDINGS_PROVIDER`.
+- `openai`
+- `ollama`
+- `dashscope`
+- `huggingface`
 
-**Infrastructure**
+Changing the embedding model may change vector dimensions. Reprocess documents after switching embedding models.
+
+DeepSeek does not provide embeddings. Use `ollama`, `openai`, `dashscope`, or `huggingface` for embeddings.
+
+### Retrieval Scoring
+
+Retrieval scores are streamed to the frontend when the vector store returns them. Optional filtering can be configured:
+
+```env
+RETRIEVAL_SCORE_THRESHOLD=
+RETRIEVAL_SCORE_MODE=distance
+```
+
+- `distance`: lower score is better.
+- `similarity`: higher score is better.
+- If no threshold is set, scores are displayed but not filtered.
+
+### Infrastructure
 
 | Variable | Purpose |
-|----------|---------|
-| `POSTGRES_*` | Metadata (users, KBs, chats, configs) |
-| `MINIO_*` | Raw document storage |
-| `VECTOR_STORE_TYPE` | `chroma` (default) or `qdrant` |
-| `CHROMA_URL` | HTTP endpoint (dev: `http://127.0.0.1:28100`; Compose: `http://chromadb:8000`; prod Docker: `http://host.docker.internal:28100`) |
-| `SECRET_KEY` | JWT signing — **change in production** |
-| `API_BASE_URL`, `WEB_BASE_URL`, `CORS_ALLOWED_ORIGINS` | Production URLs |
+|---|---|
+| `POSTGRES_*` | Users, chats, knowledge bases, model configs, tasks |
+| `MINIO_*` | Uploaded document storage |
+| `VECTOR_STORE_TYPE` | `chroma` or `qdrant` |
+| `CHROMA_URL` | Chroma HTTP endpoint |
+| `QDRANT_URL` | Qdrant endpoint when enabled |
+| `SECRET_KEY` | JWT signing key; change in production |
+| `WEB_BASE_URL` | Public frontend URL |
+| `API_BASE_URL` | Public API URL used by the frontend |
+| `CORS_ALLOWED_ORIGINS` | Additional allowed origins |
 
-Legacy per-provider env vars (`OPENAI_API_KEY`, `DEEPSEEK_*`, …) still work as fallbacks when `CHAT_*` / `EMBEDDINGS_*` are empty.
+Legacy provider-specific variables such as `OPENAI_API_KEY`, `DEEPSEEK_*`, and `OLLAMA_*` remain available as fallbacks when unified `CHAT_*` / `EMBEDDINGS_*` variables are empty.
 
-Guides: [docs/OLLAMA_EMBEDDINGS.md](docs/OLLAMA_EMBEDDINGS.md), [docs/HUGGINGFACE_EMBEDDINGS.md](docs/HUGGINGFACE_EMBEDDINGS.md).
+## API Integration
 
-### API integration
+### Browser / SPA
 
-- **Browser / SPA** — JWT from `POST /api/v1/auth/token`; use Bearer token on `/api/v1/*`.
-- **Server-to-server retrieval** — Create an API key in the dashboard; call routes under `/openapi` with header `X-API-Key: <your-key>`. Example: `GET /openapi/{knowledge_base_id}/query?query=...&top_k=3` (see ReDoc).
-- **Schema** — `http://localhost:8000/api/v1/openapi.json` and `/redoc`.
+Use JWT auth:
 
-Document ingestion and chat streaming are exposed under `/api/v1/`; inspect `apps/api/app/api/api_v1/` for the full surface.
+```text
+POST /api/auth/token
+Authorization: Bearer <token>
+```
 
-### Deployment
+Main application APIs live under `/api/*`.
 
-| Method | When to use |
-|--------|-------------|
-| `docker compose up -d --build` | All-in-one dev/demo on one machine |
-| `docker compose -f docker-compose.prod.yml` | Production web + API containers |
-| `docker compose -f docker-compose.chroma.yml` | Dedicated Chroma HTTP (`./chroma_data`; started by `deploy.sh`) |
-| `./deploy.sh` | Rsync to VPS, build prod compose, run Alembic; **does not** install Postgres/MinIO/Ollama on the server |
+### Server-to-server Retrieval
+
+Create an API key in the dashboard, then call:
+
+```text
+GET /openapi/knowledge/:kb_uuid/query?query=...&top_k=3
+X-API-Key: <your-api-key>
+```
+
+Response shape:
+
+```json
+{
+  "results": [
+    {
+      "content": "...",
+      "metadata": {
+        "file_name": "example.pdf",
+        "kb_uuid": "01...",
+        "document_id": 123
+      },
+      "score": 0.123
+    }
+  ]
+}
+```
+
+## Project Structure
+
+```text
+rag-web-ui/
+├── apps/
+│   ├── api/
+│   │   ├── app/api/api_v1/      # Auth, KB, chat, model configs, API keys
+│   │   ├── app/api/openapi/     # API-key retrieval
+│   │   ├── app/models/          # SQLAlchemy models
+│   │   ├── app/services/        # RAG, document processing, providers
+│   │   └── alembic/             # DB migrations
+│   └── web/
+│       ├── src/app/             # Next.js routes
+│       ├── src/components/      # UI components
+│       ├── src/lib/             # Client utilities and stream parsing
+│       └── src/messages/        # en / zh translations
+├── docs/
+├── scripts/
+├── docker-compose.yml
+├── docker-compose.prod.yml
+├── docker-compose.chroma.yml
+├── pnpm-workspace.yaml
+└── package.json
+```
+
+## Deployment Notes
+
+Use one of:
+
+| Method | Use case |
+|---|---|
+| `docker compose up -d --build` | Single-machine demo/dev |
+| `docker compose -f docker-compose.prod.yml up -d --build` | Production web + API containers |
+| `docker compose -f docker-compose.chroma.yml up -d` | Dedicated Chroma process |
+| `./deploy.sh` | Rsync to a VPS, run production Compose, run migrations |
 
 Production checklist:
 
-- Strong `SECRET_KEY`, DB password, MinIO credentials
-- `API_BASE_URL`, `WEB_BASE_URL`, `CORS_ALLOWED_ORIGINS`
-- `CHROMA_URL=http://host.docker.internal:28100` when API runs in Docker and Chroma on the host
-- Back up `chroma_data/`, Postgres, and MinIO volumes — `deploy.sh` excludes `chroma_data` from rsync
+- Set a strong `SECRET_KEY`.
+- Set real PostgreSQL and MinIO credentials.
+- Configure `WEB_BASE_URL`, `API_BASE_URL`, and `CORS_ALLOWED_ORIGINS`.
+- Back up PostgreSQL, MinIO data, and `chroma_data/`.
+- Do not rely on local `/tmp` files for durability; processed documents should live in MinIO.
 
-### Further reading
+## Further Reading
 
-| Doc | Topic |
-|-----|--------|
-| [docs/troubleshooting.md](docs/troubleshooting.md) | DB, migrations, common errors |
-| [docs/ADD_DOCUMENT_FLOW.md](docs/ADD_DOCUMENT_FLOW.md) | Upload → chunk → embed pipeline |
-| [docs/tutorial/README.md](docs/tutorial/README.md) | RAG tutorial (Chinese) |
-| [docs/blog/deploy-local.md](docs/blog/deploy-local.md) | Local deployment notes |
-| [README.zh-CN.md](README.zh-CN.md) | Chinese documentation |
+| File | Topic |
+|---|---|
+| [docs/ADD_DOCUMENT_FLOW.md](docs/ADD_DOCUMENT_FLOW.md) | Document upload, chunking, and embedding |
+| [docs/OLLAMA_EMBEDDINGS.md](docs/OLLAMA_EMBEDDINGS.md) | Ollama embedding setup |
+| [docs/HUGGINGFACE_EMBEDDINGS.md](docs/HUGGINGFACE_EMBEDDINGS.md) | HuggingFace embedding setup |
+| [docs/troubleshooting.md](docs/troubleshooting.md) | Troubleshooting |
+| [docs/tutorial/README.md](docs/tutorial/README.md) | Chinese RAG tutorial |
 
-### Upstream & license
+## License
 
-Maintained as a fork of [rag-web-ui/rag-web-ui](https://github.com/rag-web-ui/rag-web-ui) under **[Apache License 2.0](LICENSE)**. Thanks to the upstream authors and to FastAPI, LangChain, Next.js, Chroma, MinIO, and related projects.
+Maintained as a fork of [rag-web-ui/rag-web-ui](https://github.com/rag-web-ui/rag-web-ui) under [Apache License 2.0](LICENSE).

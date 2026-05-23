@@ -1,338 +1,372 @@
 # 智能知识库与对话
 
 <div align="center">
-  <p><strong>基于 RAG 的知识库问答 — 上传资料、自然语言提问、回答附带引用出处</strong></p>
+  <p><strong>可自托管的 RAG 知识库问答系统，支持引用、检索进度、可配置模型。</strong></p>
   <p>
     <a href="LICENSE">Apache License 2.0</a>
     · <a href="README.md">English</a> | <strong>简体中文</strong>
   </p>
 </div>
 
-## 目录
+## 项目定位
 
-**所有人**
+这是一个可自托管的 RAG Web 应用。用户可以创建知识库、上传文档、在对话中提问，并通过引用来源和检索状态核验回答依据。
 
-- [产品概览](#产品概览)
-- [工作原理](#工作原理)
+仓库采用 pnpm + Turborepo monorepo：
 
-**终端用户**
+- `apps/web`：Next.js App Router 控制台、对话 UI、国际化、模型配置、知识库管理。
+- `apps/api`：FastAPI、SQLAlchemy、Alembic、文档入库、向量检索、流式对话。
+- PostgreSQL 存储元数据。
+- MinIO 存储上传文件。
+- Chroma 或 Qdrant 存储向量。
+- 对话模型和 Embedding 模型可通过环境变量或控制台配置。
 
-- [面向终端用户](#面向终端用户)
-- [Web 端使用指南](#web-端使用指南)
-- [支持的文档格式](#支持的文档格式)
-- [使用建议与限制](#使用建议与限制)
+## 产品能力
 
-**开发者**
+- 知识库创建、编辑、删除，支持图标和颜色。
+- 上传 PDF、DOCX、Markdown、TXT。
+- 处理前预览分块。
+- 后台文档解析、分块、向量化、失败重试、重新处理。
+- 多知识库对话。
+- Assistant 回答流式输出。
+- 检索状态面板：问题改写、搜索、召回、筛选、生成。
+- 引用来源与原文片段预览。
+- 用户级 LLM 和 Embedding 配置。
+- API Key 支持服务端检索。
+- 中英文界面。
 
-- [面向开发者](#面向开发者)
-- [系统架构](#系统架构)
-- [快速开始（Docker）](#快速开始docker)
-- [本地开发](#本地开发)
-- [项目结构](#项目结构)
-- [配置说明](#配置说明)
-- [API 集成](#api-集成)
-- [部署](#部署)
-- [延伸阅读](#延伸阅读)
-- [上游项目与许可证](#上游项目与许可证)
-
----
-
-## 产品概览
-
-| 角色 | 你能获得什么 |
-|------|----------------|
-| **终端用户** | 网页端上传 PDF/Word/Markdown/文本，针对自己的知识库对话，查看引用与检索进度，无需了解机器学习术语 |
-| **开发者** | 可自托管的 monorepo（Next.js + FastAPI），可插拔的对话/向量模型、Chroma 或 Qdrant、OpenAPI 检索，以及 Docker 与 `pnpm dev` 工作流 |
-
----
-
-## 工作原理
+## RAG 流程
 
 ```mermaid
 flowchart LR
-  A[上传文档] --> B[解析、分块、向量化]
-  C[用户提问] --> D[检索相关片段]
-  B --> D
-  D --> E[大模型生成回答]
-  E --> F[引用与原文预览]
+  A["上传文档"] --> B["解析与分块"]
+  B --> C["生成 Embedding"]
+  C --> D["写入向量库"]
+  E["用户提问"] --> F["按需改写检索问题"]
+  F --> G["从选中的知识库检索片段"]
+  G --> H["筛选上下文并流式返回检索状态"]
+  H --> I["大模型生成回答"]
+  I --> J["展示回答与引用"]
 ```
 
-1. 文档经解析、分块后写入向量数据库。
-2. 每次提问会从所选知识库中检索最相关片段。
-3. 对话模型组织回答；界面可展示 **引用角标**、**原文片段**，以及检索进行中的 **状态流**。
-
----
-
-## 面向终端用户
-
-### 能做什么
-
-- **知识库** — 按主题组织内容（如人事制度、产品手册）。
-- **资料问答** — 用日常语言提问；回答优先依据 **您上传的文件**，而非公开互联网。
-- **多轮对话** — 同一会话内连续追问；每次对话可选择一个或多个知识库。
-- **核对出处** — 模型引用文档时，可点击引用序号查看原文预览。
-- **语言** — 界面可在中英文间切换（URL 中的 `/en` … 或 `/zh` …，或页头语言切换器）。
-
-### 典型工作流
-
-| 目标 | 步骤 |
-|------|------|
-| 建库 | 控制台 → **知识库** → 新建 → **上传** → 等待处理完成 |
-| 测检索 | 打开知识库 → **检索测试** → 不进入对话即可试 query |
-| 提问 | **对话** → 新建会话 → 选择知识库 → 输入并发送 |
-| 对接其他应用 | **API 密钥** → 创建密钥 → 调用 OpenAPI 检索接口（见 [API 集成](#api-集成)） |
-
-管理员还可在 **模型配置** 中维护对话模型与 Embedding（也可在首次登录前通过服务器 `.env` 配置）。
-
-### Web 端使用指南
-
-部署方提供访问地址后（如 `https://app.example.com` 或 `http://localhost:3000`）：
-
-1. **注册 / 登录** — 账号归属当前部署实例，无公用云租户。
-2. **创建知识库** — 命名，可选设置图标/颜色。
-3. **上传文件** — 拖拽或选择文件；状态为 **已完成** 后再提问效果更好。
-4. **可选：预览分块** — 上传过程中可预览文本如何分块（块大小 / 重叠）。
-5. **开始对话** — 选择知识库并提问；可在检索面板查看搜索进度与命中文档。
-6. **重新生成或反馈** — 对助手消息可重新生成，或在启用时提交赞/踩。
-
-**主要功能入口**
-
-| 模块 | 路径（含语言前缀） | 说明 |
-|------|-------------------|------|
-| 概览 | `/dashboard` | 入口 |
-| 知识库 | `/dashboard/knowledge` | 知识库、文档、上传与处理状态 |
-| 对话 | `/dashboard/chat` | RAG 对话、引用、流式输出 |
-| RAG 流程 | `/dashboard/rag` | RAG 流程示意/说明 |
-| 对话模型 | `/dashboard/llm-configs` | 对话模型（多厂商、校验与默认项） |
-| 向量模型 | `/dashboard/embedding-configs` | Embedding 模型（更换后可能需重新入库） |
-| API 密钥 | `/dashboard/api-keys` | 程序化检索用的密钥 |
-
-### 支持的文档格式
-
-| 类型 | 扩展名 | 单文件上限（前端） |
-|------|--------|-------------------|
-| PDF | `.pdf` | 50 MB |
-| Word | `.docx` | 50 MB |
-| Markdown | `.md` | 50 MB |
-| 纯文本 | `.txt` | 50 MB |
-
-无文字层的扫描版 PDF 可能解析较差，建议尽量使用可选中文字的版本。
-
-### 使用建议与限制
-
-- **等待入库完成** — 文档处理显示 **已完成** 后再提问，效果更稳定。
-- **核对引用** — 涉及数字、日期、法律/医疗/财务等内容，请以原始文件为准。
-- **模型局限** — 大模型可能编造或遗漏上下文；检索增强能提高依据性，但不能保证完全正确。
-- **隐私** — 仅上传有权保存的资料；留存与合规取决于贵司如何托管系统。
-- **支持** — 登录、上传或回答质量问题请联系部署方（除非您自行托管本仓库）。
-
----
-
-## 面向开发者
-
-本仓库为 **pnpm + Turborepo monorepo**：`apps/web`（Next.js 14、App Router、`next-intl`）与 `apps/api`（FastAPI、LangChain、Alembic）。元数据在 **PostgreSQL**；文件在 **MinIO**；向量在 **Chroma**（默认）或 **Qdrant**。
-
-Fork 自 [rag-web-ui/rag-web-ui](https://github.com/rag-web-ui/rag-web-ui)，主要演进包括 PostgreSQL、统一 `CHAT_*` / `EMBEDDINGS_*` 环境变量、控制台模型配置、检索流式 UI 等。
-
-### 系统架构
+## 系统架构
 
 ```mermaid
 flowchart TB
-  subgraph client["浏览器"]
-    Web["Next.js apps/web"]
+  subgraph Browser["浏览器"]
+    Web["apps/web\nNext.js App Router"]
   end
-  subgraph api["FastAPI apps/api"]
+
+  subgraph API["apps/api\nFastAPI"]
     Auth["JWT 认证"]
-    KB["知识库与文档"]
-    Chat["对话 + RAG"]
-    Open["OpenAPI /openapi"]
+    KB["知识库 API"]
+    Docs["文档处理流水线"]
+    Chat["对话 + RAG 流"]
+    OpenAPI["API Key 检索\n/openapi"]
+    Configs["LLM / Embedding 配置"]
   end
-  subgraph data["数据层"]
+
+  subgraph Data["数据层"]
     PG[(PostgreSQL)]
     MinIO[(MinIO)]
-    VS[(Chroma / Qdrant)]
+    Vector[(Chroma / Qdrant)]
   end
-  subgraph external["外部服务"]
+
+  subgraph Providers["模型服务"]
     LLM["对话模型"]
     EMB["Embedding 模型"]
   end
+
   Web --> Auth
   Web --> KB
   Web --> Chat
-  Open --> VS
-  KB --> PG
-  KB --> MinIO
-  KB --> EMB
-  Chat --> VS
+  Web --> Configs
+  KB --> Docs
+  Docs --> MinIO
+  Docs --> EMB
+  Docs --> Vector
+  Chat --> Vector
   Chat --> LLM
   Chat --> PG
+  OpenAPI --> Vector
+  Auth --> PG
+  KB --> PG
+  Configs --> PG
 ```
 
-### 快速开始（Docker）
+## 主要路由
 
-**环境要求：** Docker Compose v2+，建议 8GB+ 内存。
+前端路由带语言前缀，例如 `/zh/dashboard/chat` 或 `/en/dashboard/chat`。
+
+| 模块 | 前端路径 |
+|---|---|
+| 控制台 | `/dashboard` |
+| 知识库 | `/dashboard/knowledge` |
+| 知识库详情 | `/dashboard/knowledge/:kb_uuid` |
+| 对话 | `/dashboard/chat` |
+| 对话详情 | `/dashboard/chat/:chat_uuid` |
+| RAG 流程 | `/dashboard/rag` |
+| 对话模型 | `/dashboard/llm-configs` |
+| 向量模型 | `/dashboard/embedding-configs` |
+| API 密钥 | `/dashboard/api-keys` |
+| 账户 | `/dashboard/account` |
+
+后端主 API 挂载在 `/api`，不是 `/api/v1`。
+
+| 模块 | 后端路径 |
+|---|---|
+| OpenAPI schema | `/api/openapi.json` |
+| 健康检查 | `/api/health` |
+| 认证 | `/api/auth/*` |
+| 知识库 | `/api/knowledge-base/*` |
+| 对话 | `/api/chat/*` |
+| 对话模型配置 | `/api/llm-configs/*` |
+| 向量模型配置 | `/api/embedding-configs/*` |
+| API 密钥 | `/api/api-keys/*` |
+| API Key 检索 | `/openapi/knowledge/:kb_uuid/query` |
+
+## Docker 快速开始
+
+环境要求：Docker Compose v2+，建议 8GB+ 内存。
 
 ```bash
 git clone <your-repo-url>
 cd rag-web-ui
 cp .env.example .env
-# 配置 CHAT_PROVIDER、CHAT_API_KEY、EMBEDDINGS_PROVIDER 等
+# 生产使用前请修改 CHAT_*、EMBEDDINGS_*、SECRET_KEY 等配置。
 docker compose up -d --build
 ```
 
-| 服务 | 默认地址 |
-|------|----------|
-| 前端 | http://localhost:3000 |
-| 后端 API | http://localhost:8000 |
-| API 文档（ReDoc） | http://localhost:8000/redoc |
-| OpenAPI JSON | http://localhost:8000/api/v1/openapi.json |
-| MinIO 控制台 | http://localhost:9001（minioadmin / minioadmin） |
-| Chroma（宿主机端口） | http://localhost:8001 |
+默认地址：
 
-Compose 内 API 使用 `CHROMA_URL=http://chromadb:8000`。若对话/向量走宿主机 **Ollama**，请将 `CHAT_API_BASE`、`EMBEDDINGS_API_BASE` 设为 `http://host.docker.internal:11434`，并先拉取模型（如 `deepseek-r1:7b`、`bge-m3`）。
+| 服务 | 地址 |
+|---|---|
+| Web | http://localhost:3000 |
+| API | http://localhost:8000 |
+| ReDoc | http://localhost:8000/redoc |
+| API schema | http://localhost:8000/api/openapi.json |
+| 健康检查 | http://localhost:8000/api/health |
+| MinIO 控制台 | http://localhost:9001 |
+| Chroma 宿主机端口 | http://localhost:8001 |
 
-### 本地开发
+Docker Compose 内 API 使用 `CHROMA_URL=http://chromadb:8000`。
 
-**环境要求**
+如果 Docker 内的 API 访问宿主机 Ollama，请设置：
+
+```env
+CHAT_API_BASE=http://host.docker.internal:11434
+EMBEDDINGS_API_BASE=http://host.docker.internal:11434
+```
+
+## 本地开发
+
+环境要求：
 
 | 工具 | 版本 |
-|------|------|
+|---|---|
 | Node.js | 18+ |
-| pnpm | 9.x（见根目录 `packageManager`） |
-| Python | **仅 3.11 或 3.12**（3.14 与当前 Pydantic/LangChain 不兼容） |
-| Docker | 可选，通常用于 Postgres + MinIO |
+| pnpm | 9.x，见根目录 `package.json` 的 `packageManager` |
+| Python | 推荐 3.11 或 3.12 |
+| Docker | 推荐用于 PostgreSQL 和 MinIO |
 
-**推荐混合开发** — 有状态服务用 Docker，应用在宿主机：
+推荐混合开发方式：
 
 ```bash
 cp .env.example .env
-# 可保留 POSTGRES_SERVER=db、MINIO_ENDPOINT=minio:9000 — dev.sh 会映射到 localhost
 
-docker compose up -d db minio   # Postgres :5432，MinIO :9000 / :9001
+docker compose up -d db minio
 
 pnpm install
-cd apps/api && python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt && cd ../..
+cd apps/api
+python3.12 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+cd ../..
 
-pnpm dev   # 本机 Chroma 127.0.0.1:28100 + turbo dev（前端 :3000，API :8000）
+pnpm dev
 ```
 
-`apps/api/scripts/dev.sh`（由 turbo 调用）会自动：
+`pnpm dev` 会启动本地 Chroma `127.0.0.1:28100`，并通过 Turbo 启动前端和后端。macOS 上建议 Chroma 使用 `127.0.0.1`，不要使用 `localhost`，避免 IPv6/IPv4 不一致问题。
 
-- 在宿主机执行 `alembic upgrade head`
-- `POSTGRES_SERVER=db` → `localhost`
-- `MINIO_ENDPOINT=minio:9000` → `localhost:9000`
-- 将含 `chromadb` 或 `localhost` 的 `CHROMA_URL` 改为 `http://127.0.0.1:28100`
-
-macOS 上 Chroma 请使用 **`127.0.0.1`**（勿用 `localhost`），避免 IPv6/IPv4 不一致导致 502。
+常用命令：
 
 | 命令 | 说明 |
-|------|------|
-| `pnpm dev` | 本机 Chroma（`./chroma_data`）+ 前后端 |
-| `pnpm dev:chroma` | 仅 Chroma HTTP |
-| `pnpm dev:chroma:stop` | 停止 dev 脚本拉起的 Chroma |
-| `pnpm dev:app` | 仅前后端（需 Chroma 已运行） |
-| `pnpm build` | 生产构建（Turbo） |
-| `pnpm lint` | 全仓库静态检查 |
-| `pnpm test` / `pnpm test:ci` | 测试 |
-| `pnpm reset-data` | 重置业务数据（破坏性，API 包） |
+|---|---|
+| `pnpm dev` | 启动 Chroma + 前端 + 后端 |
+| `pnpm dev:chroma` | 仅启动 Chroma |
+| `pnpm dev:chroma:stop` | 停止本地 Chroma |
+| `pnpm dev:app` | 仅启动前端 + 后端 |
+| `pnpm build` | 构建所有包 |
+| `pnpm lint` | 静态检查 |
+| `pnpm test` | 按包配置运行测试 |
+| `pnpm test:ci` | CI 模式测试 |
+| `pnpm reset-data` | 重置业务数据，破坏性操作 |
 | `pnpm reset-data:dry-run` | 预览重置范围 |
 
-**环境文件**
+## 配置
 
-- 根目录 **`.env`** — API 与文档默认项；Compose 与 `pnpm dev` 共用。
-- **`apps/api/.env`** — 可选，仅覆盖后端。
-- **`apps/web/.env.local`** — 可选，Next.js 覆盖项（见 `next.config.js`）。
+复制 `.env.example` 到 `.env` 用于本地开发，或复制为 `.env.production` 用于部署。
 
-### 项目结构
+### 对话模型
 
-```
-rag-web-ui/
-├── apps/
-│   ├── api/                 # FastAPI、Alembic、文档流水线、RAG 对话
-│   │   ├── app/api/api_v1/  # REST：认证、知识库、对话、llm/embedding 配置
-│   │   ├── app/api/openapi/ # API Key 检索
-│   │   └── scripts/         # dev.sh、reset_data.py
-│   └── web/                 # Next.js 控制台、对话 UI、i18n（en/zh）
-├── docs/                    # 排错、Embedding 指南、教程
-├── scripts/                 # dev-chroma.sh、dev-chroma-stop.sh
-├── docker-compose.yml       # 完整开发栈（db、minio、chromadb、api、web）
-├── docker-compose.prod.yml  # 生产镜像
-├── docker-compose.chroma.yml
-├── deploy.sh                # rsync + 生产 compose + 迁移
-├── .env.example
-└── package.json             # Turborepo 根脚本
+示例：
+
+```env
+CHAT_PROVIDER=deepseek
+CHAT_API_KEY=your-api-key
+CHAT_API_BASE=https://api.deepseek.com
+CHAT_MODEL=deepseek-v4-flash
 ```
 
-### 配置说明
+支持模式：
 
-复制 `.env.example` → `.env`（本地）或 `.env.production`（`./deploy.sh`）。
+- 内置 provider：`openai`、`deepseek`、`minimax`、`ollama`。
+- OpenAI 兼容 provider：`anthropic`、`google`、`qwen`、`kimi`、`mistral`、`azure`、`zhipu` 等，可通过自定义 Base URL 接入。
+- 控制台中的模型配置按用户存入 PostgreSQL。
 
-**对话模型（`CHAT_PROVIDER` + `CHAT_API_*`）**
+### 向量模型
 
-| 类型 | 说明 |
-|------|------|
-| `openai`、`deepseek`、`minimax`、`ollama` | 内置适配 |
-| `anthropic`、`google`、`qwen`、`kimi`、`mistral`、`azure`、`zhipu` 等 | OpenAI 兼容 Base URL |
-| 控制台 | 可在 **对话模型** 中增删配置（存数据库） |
+示例：
 
-**向量模型（`EMBEDDINGS_PROVIDER` + `EMBEDDINGS_API_*`）**
+```env
+EMBEDDINGS_PROVIDER=ollama
+EMBEDDINGS_API_BASE=http://localhost:11434
+EMBEDDINGS_MODEL=bge-m3
+```
 
-| 类型 | 说明 |
-|------|------|
-| `openai`、`ollama`、`dashscope`、`huggingface` | 模型名见 `.env.example` |
-| 维度变更 | 更换 Embedding 模型后需 **重新处理** 文档 |
+支持 provider：
 
-DeepSeek **不提供** Embedding API — `EMBEDDINGS_PROVIDER` 请使用 `ollama`、`openai` 或 `huggingface`。
+- `openai`
+- `ollama`
+- `dashscope`
+- `huggingface`
 
-**基础设施**
+更换 Embedding 模型可能改变向量维度，切换后需要重新处理文档。
+
+DeepSeek 不提供 Embedding API。向量模型请使用 `ollama`、`openai`、`dashscope` 或 `huggingface`。
+
+### 检索分数
+
+当向量库返回分数时，后端会把分数流式传给前端。可选过滤配置：
+
+```env
+RETRIEVAL_SCORE_THRESHOLD=
+RETRIEVAL_SCORE_MODE=distance
+```
+
+- `distance`：分数越低越相关。
+- `similarity`：分数越高越相关。
+- 不配置 threshold 时，仅展示分数，不做过滤。
+
+### 基础设施
 
 | 变量 | 用途 |
-|------|------|
-| `POSTGRES_*` | 元数据（用户、知识库、对话、配置） |
-| `MINIO_*` | 原始文档对象存储 |
-| `VECTOR_STORE_TYPE` | `chroma`（默认）或 `qdrant` |
-| `CHROMA_URL` | HTTP 地址（开发：`http://127.0.0.1:28100`；Compose：`http://chromadb:8000`；生产 Docker：`http://host.docker.internal:28100`） |
-| `SECRET_KEY` | JWT 签名 — **生产环境务必更换** |
-| `API_BASE_URL`、`WEB_BASE_URL`、`CORS_ALLOWED_ORIGINS` | 生产对外 URL |
+|---|---|
+| `POSTGRES_*` | 用户、对话、知识库、模型配置、任务等元数据 |
+| `MINIO_*` | 上传文档对象存储 |
+| `VECTOR_STORE_TYPE` | `chroma` 或 `qdrant` |
+| `CHROMA_URL` | Chroma HTTP 地址 |
+| `QDRANT_URL` | Qdrant 地址 |
+| `SECRET_KEY` | JWT 签名密钥，生产环境必须更换 |
+| `WEB_BASE_URL` | 前端公开地址 |
+| `API_BASE_URL` | 前端访问的 API 公开地址 |
+| `CORS_ALLOWED_ORIGINS` | 额外允许的跨域来源 |
 
-旧版分散变量（`OPENAI_API_KEY`、`DEEPSEEK_*` 等）在 `CHAT_*` / `EMBEDDINGS_*` 为空时仍可作为回退。
+旧版 provider 变量如 `OPENAI_API_KEY`、`DEEPSEEK_*`、`OLLAMA_*` 仍可作为回退；当统一的 `CHAT_*` / `EMBEDDINGS_*` 为空时生效。
 
-指南：[docs/OLLAMA_EMBEDDINGS.md](docs/OLLAMA_EMBEDDINGS.md)、[docs/HUGGINGFACE_EMBEDDINGS.md](docs/HUGGINGFACE_EMBEDDINGS.md)。
+## API 集成
 
-### API 集成
+### 浏览器 / SPA
 
-- **浏览器 / SPA** — 通过 `POST /api/v1/auth/token` 获取 JWT，访问 `/api/v1/*` 时携带 Bearer。
-- **服务端检索** — 在控制台创建 API Key，请求头 `X-API-Key: <密钥>` 调用 `/openapi` 下路由。示例：`GET /openapi/{knowledge_base_id}/query?query=...&top_k=3`（见 ReDoc）。
-- **Schema** — `http://localhost:8000/api/v1/openapi.json` 与 `/redoc`。
+使用 JWT 认证：
 
-文档入库与对话流式接口在 `/api/v1/` 下；完整路由见 `apps/api/app/api/api_v1/`。
+```text
+POST /api/auth/token
+Authorization: Bearer <token>
+```
 
-### 部署
+主应用 API 均在 `/api/*` 下。
 
-| 方式 | 适用场景 |
-|------|----------|
-| `docker compose up -d --build` | 单机开发/演示全栈 |
-| `docker compose -f docker-compose.prod.yml` | 生产前后端容器 |
-| `docker compose -f docker-compose.chroma.yml` | 独立 Chroma HTTP（`./chroma_data`；由 `deploy.sh` 启动） |
-| `./deploy.sh` | rsync 到 VPS、构建生产 compose、执行 Alembic；**不会**在服务器安装 Postgres/MinIO/Ollama |
+### 服务端检索
+
+在控制台创建 API Key 后调用：
+
+```text
+GET /openapi/knowledge/:kb_uuid/query?query=...&top_k=3
+X-API-Key: <your-api-key>
+```
+
+响应示例：
+
+```json
+{
+  "results": [
+    {
+      "content": "...",
+      "metadata": {
+        "file_name": "example.pdf",
+        "kb_uuid": "01...",
+        "document_id": 123
+      },
+      "score": 0.123
+    }
+  ]
+}
+```
+
+## 项目结构
+
+```text
+rag-web-ui/
+├── apps/
+│   ├── api/
+│   │   ├── app/api/api_v1/      # 认证、知识库、对话、模型配置、API Key
+│   │   ├── app/api/openapi/     # API Key 检索
+│   │   ├── app/models/          # SQLAlchemy 模型
+│   │   ├── app/services/        # RAG、文档处理、模型 provider
+│   │   └── alembic/             # 数据库迁移
+│   └── web/
+│       ├── src/app/             # Next.js 路由
+│       ├── src/components/      # UI 组件
+│       ├── src/lib/             # 客户端工具和流解析
+│       └── src/messages/        # 中英文文案
+├── docs/
+├── scripts/
+├── docker-compose.yml
+├── docker-compose.prod.yml
+├── docker-compose.chroma.yml
+├── pnpm-workspace.yaml
+└── package.json
+```
+
+## 部署说明
+
+可选方式：
+
+| 方式 | 场景 |
+|---|---|
+| `docker compose up -d --build` | 单机演示/开发 |
+| `docker compose -f docker-compose.prod.yml up -d --build` | 生产前后端容器 |
+| `docker compose -f docker-compose.chroma.yml up -d` | 独立 Chroma 进程 |
+| `./deploy.sh` | rsync 到 VPS、启动生产 Compose、执行迁移 |
 
 生产检查项：
 
-- 强 `SECRET_KEY`、数据库密码、MinIO 凭证
-- `API_BASE_URL`、`WEB_BASE_URL`、`CORS_ALLOWED_ORIGINS`
-- API 在 Docker、Chroma 在宿主机时：`CHROMA_URL=http://host.docker.internal:28100`
-- 备份 `chroma_data/`、Postgres、MinIO 卷 — `deploy.sh` 的 rsync 不会覆盖服务器上的 `chroma_data`
+- 设置强 `SECRET_KEY`。
+- 设置真实 PostgreSQL 和 MinIO 凭证。
+- 配置 `WEB_BASE_URL`、`API_BASE_URL`、`CORS_ALLOWED_ORIGINS`。
+- 备份 PostgreSQL、MinIO 数据和 `chroma_data/`。
+- 不要依赖本地 `/tmp` 文件持久化；处理完成后的文档应以 MinIO 为准。
 
-### 延伸阅读
+## 延伸阅读
 
-| 文档 | 内容 |
-|------|------|
-| [docs/troubleshooting.md](docs/troubleshooting.md) | 数据库、迁移、常见错误 |
-| [docs/ADD_DOCUMENT_FLOW.md](docs/ADD_DOCUMENT_FLOW.md) | 上传 → 分块 → 向量化流程 |
-| [docs/tutorial/README.md](docs/tutorial/README.md) | RAG 教程（中文） |
-| [docs/blog/deploy-local.md](docs/blog/deploy-local.md) | 本地部署笔记 |
-| [README.md](README.md) | English documentation |
+| 文件 | 内容 |
+|---|---|
+| [docs/ADD_DOCUMENT_FLOW.md](docs/ADD_DOCUMENT_FLOW.md) | 文档上传、分块、向量化 |
+| [docs/OLLAMA_EMBEDDINGS.md](docs/OLLAMA_EMBEDDINGS.md) | Ollama 向量模型配置 |
+| [docs/HUGGINGFACE_EMBEDDINGS.md](docs/HUGGINGFACE_EMBEDDINGS.md) | HuggingFace 向量模型配置 |
+| [docs/troubleshooting.md](docs/troubleshooting.md) | 常见问题排查 |
+| [docs/tutorial/README.md](docs/tutorial/README.md) | 中文 RAG 教程 |
 
-### 上游项目与许可证
+## 许可证
 
-在 [rag-web-ui/rag-web-ui](https://github.com/rag-web-ui/rag-web-ui) 基础上维护，遵循 **[Apache License 2.0](LICENSE)**。感谢上游作者及 FastAPI、LangChain、Next.js、Chroma、MinIO 等相关开源项目。
+本项目基于 [rag-web-ui/rag-web-ui](https://github.com/rag-web-ui/rag-web-ui) 维护，遵循 [Apache License 2.0](LICENSE)。
