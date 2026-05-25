@@ -6,6 +6,7 @@ from app.api.api_v1 import (
     api_keys,
     llm_configs,
     embedding_configs,
+    workflows,
 )
 
 api_router = APIRouter()
@@ -18,3 +19,4 @@ api_router.include_router(llm_configs.router, prefix="/llm-configs", tags=["llm-
 api_router.include_router(
     embedding_configs.router, prefix="/embedding-configs", tags=["embedding-configs"]
 )
+api_router.include_router(workflows.router, tags=["workflows"])

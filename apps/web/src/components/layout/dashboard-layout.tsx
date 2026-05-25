@@ -13,6 +13,7 @@ import {
   GitBranch,
   Binary,
   User,
+  Workflow,
 } from "lucide-react";
 
 import { Link, usePathname, useRouter } from "@/i18n/navigation";
@@ -43,6 +44,7 @@ type NavItemKey =
   | "knowledgeBase"
   | "chat"
   | "rag"
+  | "workflows"
   | "llmConfigs"
   | "embeddingConfigs"
   | "apiKeys"
@@ -68,6 +70,7 @@ const DASHBOARD_NAV_GROUPS: {
     items: [
       { nameKey: "knowledgeBase", href: "/dashboard/knowledge", icon: Book },
       { nameKey: "chat", href: "/dashboard/chat", icon: MessageSquare },
+      { nameKey: "workflows", href: "/dashboard/workflows", icon: Workflow },
       { nameKey: "rag", href: "/dashboard/rag", icon: GitBranch },
     ],
   },

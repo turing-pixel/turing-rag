@@ -1,7 +1,9 @@
 "use client";
 
+import { createElement } from "react";
+
 import { cn } from "@/lib/utils";
-import { getKbIconComponent } from "@/lib/kb-icons";
+import { KB_ICONS, resolveKbIconName } from "@/lib/kb-icons";
 import {
   getKbIconColorStyles,
   resolveKbIconColor,
@@ -20,7 +22,6 @@ export function KnowledgeBaseIcon({
   className,
   iconClassName,
 }: KnowledgeBaseIconProps) {
-  const Icon = getKbIconComponent(icon);
   const { pedestal, icon: iconTone } = getKbIconColorStyles(
     resolveKbIconColor(iconColor)
   );
@@ -33,7 +34,10 @@ export function KnowledgeBaseIcon({
         className
       )}
     >
-      <Icon className={cn("size-5", iconTone, iconClassName)} aria-hidden />
+      {createElement(KB_ICONS[resolveKbIconName(icon)], {
+        className: cn("size-5", iconTone, iconClassName),
+        "aria-hidden": true,
+      })}
     </div>
   );
 }

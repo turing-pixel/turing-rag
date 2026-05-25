@@ -26,6 +26,8 @@ const SEGMENT_KEYS = [
   "embedding-configs",
   "test-retrieval",
   "rag",
+  "workflows",
+  "runs",
   "account",
 ] as const;
 
@@ -39,6 +41,7 @@ const DASHBOARD_SECTION_KEYS = new Set<SegmentKey>([
   "knowledge",
   "chat",
   "rag",
+  "workflows",
   "api-keys",
   "llm-configs",
   "embedding-configs",

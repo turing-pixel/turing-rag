@@ -1,0 +1,55 @@
+/* Workflow step node — minimal card chrome */
+.workflow-step-node {
+  --wf-node-radius: 0.75rem;
+  box-shadow:
+    0 1px 2px color-mix(in oklch, var(--foreground) 4%, transparent),
+    0 0 0 1px color-mix(in oklch, var(--border) 80%, transparent);
+  transition:
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+.workflow-step-node:hover {
+  box-shadow:
+    0 4px 12px color-mix(in oklch, var(--foreground) 6%, transparent),
+    0 0 0 1px color-mix(in oklch, var(--border) 100%, transparent);
+}
+
+.workflow-step-node.is-selected {
+  box-shadow:
+    0 4px 16px color-mix(in oklch, var(--primary) 12%, transparent),
+    0 0 0 1.5px color-mix(in oklch, var(--primary) 45%, transparent);
+}
+
+.workflow-step-node.is-running {
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--primary) 35%, transparent),
+    0 0 0 4px color-mix(in oklch, var(--primary) 8%, transparent);
+}
+
+.workflow-step-node.is-failed {
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--destructive) 40%, transparent);
+}
+
+.workflow-step-node .wf-handle {
+  width: 7px;
+  height: 7px;
+  border: 1.5px solid var(--background);
+  background: color-mix(in oklch, var(--muted-foreground) 55%, transparent);
+  opacity: 0;
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease,
+    background 0.15s ease;
+}
+
+.workflow-step-node:hover .wf-handle,
+.workflow-step-node.is-selected .wf-handle {
+  opacity: 1;
+}
+
+.workflow-step-node .wf-handle:hover {
+  transform: scale(1.2);
+  background: var(--primary);
+}

@@ -478,6 +478,65 @@ async def preview_document(file_path: str, chunk_size: int = 1000, chunk_overlap
         if should_cleanup and os.path.exists(temp_path):
             os.unlink(temp_path)
 
+
+WORKFLOW_DOCUMENT_MAX_BYTES = 15 * 1024 * 1024
+WORKFLOW_DOCUMENT_EXTENSIONS = {".pdf", ".docx", ".md", ".txt"}
+
+
+def _safe_workflow_upload_name(file_name: str | None) -> str:
+    base = os.path.basename(file_name or "document")
+    cleaned = "".join(c for c in base if c.isalnum() or c in ("-", "_", ".", " ")).strip()
+    return cleaned or "document"
+
+
+def _load_langchain_documents(temp_path: str, ext: str) -> List[LangchainDocument]:
+    if ext == ".pdf":
+        loader = PyPDFLoader(temp_path)
+    elif ext == ".docx":
+        loader = Docx2txtLoader(temp_path)
+    elif ext == ".md":
+        loader = UnstructuredMarkdownLoader(temp_path)
+    else:
+        loader = TextLoader(temp_path)
+    return loader.load()
+
+
+async def extract_workflow_document_text(file: UploadFile) -> dict[str, object]:
+    """Extract plain text from an uploaded contract/document for workflow input."""
+    raw_name = _safe_workflow_upload_name(file.filename)
+    _, ext = os.path.splitext(raw_name)
+    ext = ext.lower()
+    if ext not in WORKFLOW_DOCUMENT_EXTENSIONS:
+        allowed = ", ".join(sorted(WORKFLOW_DOCUMENT_EXTENSIONS))
+        raise ValueError(f"Unsupported file type. Allowed: {allowed}")
+
+    content = await file.read()
+    if not content:
+        raise ValueError("File is empty")
+    if len(content) > WORKFLOW_DOCUMENT_MAX_BYTES:
+        raise ValueError("File exceeds 15 MB limit")
+
+    temp_path: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as temp_file:
+            temp_file.write(content)
+            temp_path = temp_file.name
+
+        documents = await asyncio.to_thread(_load_langchain_documents, temp_path, ext)
+        parts = [doc.page_content.strip() for doc in documents if doc.page_content and doc.page_content.strip()]
+        text = "\n\n".join(parts).strip()
+        if not text:
+            raise ValueError("No readable text found in this file")
+        return {
+            "text": text,
+            "file_name": raw_name,
+            "char_count": len(text),
+        }
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            os.unlink(temp_path)
+
+
 def _process_document_in_worker(
     temp_path: str,
     file_name: str,

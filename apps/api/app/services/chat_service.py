@@ -25,6 +25,10 @@ from app.services.embedding.embedding_config_service import (
 from app.services.llm.llm_config_service import ResolvedLlmRuntime
 from app.services.llm.llm_factory import LLMFactory
 from app.services.chat_retrieval import stream_retrieve_from_knowledge_bases
+from app.services.retrieval_context_service import (
+    build_retrieval_quality_payload,
+    passes_retrieval_threshold,
+)
 from app.services.vector_store_cache import get_kb_vector_store
 
 logger = logging.getLogger(__name__)
@@ -64,57 +68,6 @@ def _doc_retrieval_preview(doc: LangchainDocument) -> Dict[str, Any]:
         payload["kb_uuid"] = meta.get("kb_uuid")
     if meta.get(RETRIEVAL_SCORE_METADATA_KEY) is not None:
         payload["score"] = meta.get(RETRIEVAL_SCORE_METADATA_KEY)
-    return payload
-
-
-def _doc_retrieval_score(doc: LangchainDocument) -> float | None:
-    raw = (doc.metadata or {}).get(RETRIEVAL_SCORE_METADATA_KEY)
-    try:
-        return float(raw)
-    except (TypeError, ValueError):
-        return None
-
-
-def _passes_retrieval_threshold(doc: LangchainDocument) -> bool:
-    threshold = settings.retrieval_score_threshold
-    score = _doc_retrieval_score(doc)
-    if threshold is None or score is None:
-        return True
-    if settings.retrieval_score_mode == "similarity":
-        return score >= threshold
-    return score <= threshold
-
-
-def _retrieval_quality_payload(
-    docs: List[LangchainDocument],
-    *,
-    raw_recalled: int,
-) -> Dict[str, Any]:
-    scores = [
-        score for doc in docs if (score := _doc_retrieval_score(doc)) is not None
-    ]
-    low_confidence = len(docs) == 0
-    reason = None
-    if low_confidence:
-        reason = (
-            "below_score_threshold"
-            if raw_recalled > 0 and settings.retrieval_score_threshold is not None
-            else "no_relevant_context"
-        )
-    payload: Dict[str, Any] = {
-        "low_confidence": low_confidence,
-        "confidence_reason": reason,
-        "score_mode": settings.retrieval_score_mode,
-        "score_threshold": settings.retrieval_score_threshold,
-        "recalled_count": raw_recalled,
-        "selected_count": len(docs),
-    }
-    if scores:
-        payload["best_score"] = (
-            max(scores)
-            if settings.retrieval_score_mode == "similarity"
-            else min(scores)
-        )
     return payload
 
 
@@ -479,10 +432,10 @@ async def generate_response(
 
         raw_recalled = retrieval_stats.get("raw_recalled", len(retrieved_docs))
         retrieved_docs = [
-            doc for doc in retrieved_docs if _passes_retrieval_threshold(doc)
+            doc for doc in retrieved_docs if passes_retrieval_threshold(doc)
         ]
         selected_count = len(retrieved_docs)
-        quality_payload = _retrieval_quality_payload(
+        quality_payload = build_retrieval_quality_payload(
             retrieved_docs, raw_recalled=raw_recalled
         )
         ranking_payload = {

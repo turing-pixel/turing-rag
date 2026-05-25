@@ -22,6 +22,8 @@ markdown>=3.0.0
 unstructured[md]>=0.10.0
 openai>=1.30.0
 email-validator
+httpx>=0.27.0
+croniter>=2.0.0
 python-ulid>=2.2.0
 dashscope>=1.13.6
 langchain-deepseek==0.1.1

@@ -1,0 +1,91 @@
+@keyframes workflow-edge-dash {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+
+.workflow-edge-line {
+  stroke-dasharray: 8 6;
+  fill: none;
+}
+
+.workflow-edge-animated {
+  animation: workflow-edge-dash 1.35s linear infinite;
+}
+
+.workflow-edge-animated-fast {
+  animation-duration: 0.65s;
+  stroke-dasharray: 6 5;
+}
+
+.workflow-edge-selected {
+  stroke-dasharray: 7 5;
+}
+
+.workflow-studio-flow .react-flow__connection-path {
+  stroke: color-mix(in oklch, var(--primary) 65%, transparent);
+  stroke-width: 1.5;
+  fill: none;
+  stroke-linecap: round;
+  stroke-dasharray: 8 6;
+  animation: workflow-edge-dash 1.1s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workflow-edge-animated,
+  .workflow-studio-flow .react-flow__connection-path {
+    animation: none;
+  }
+}
+
+.workflow-studio-flow .workflow-step-handle {
+  width: 8px;
+  height: 8px;
+  border: 2px solid var(--background);
+  background: var(--border);
+  opacity: 0;
+  transition:
+    opacity 0.15s ease,
+    background-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.workflow-studio-flow .workflow-step-handle[data-handlepos="left"],
+.workflow-studio-flow .workflow-step-handle[data-handlepos="right"] {
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.workflow-studio-flow .workflow-step-handle[data-handlepos="top"],
+.workflow-studio-flow .workflow-step-handle[data-handlepos="bottom"] {
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.workflow-studio-flow .workflow-step-node:hover .workflow-step-handle,
+.workflow-studio-flow .react-flow__node.selected .workflow-step-handle,
+.workflow-studio-flow .workflow-step-handle:hover {
+  opacity: 1;
+}
+
+.workflow-studio-flow .workflow-step-node:hover .workflow-step-handle,
+.workflow-studio-flow .react-flow__node.selected .workflow-step-handle {
+  background: var(--primary);
+}
+
+.workflow-studio-flow .workflow-step-handle[data-handlepos="left"]:hover,
+.workflow-studio-flow .workflow-step-handle[data-handlepos="right"]:hover {
+  transform: translateY(-50%) scale(1.12);
+}
+
+.workflow-studio-flow .workflow-step-handle[data-handlepos="top"]:hover,
+.workflow-studio-flow .workflow-step-handle[data-handlepos="bottom"]:hover {
+  transform: translateX(-50%) scale(1.12);
+}
+
+.workflow-studio-flow .react-flow__node.selected .workflow-step-add-handle {
+  opacity: 1;
+}

@@ -55,6 +55,17 @@ async def startup_event():
 
         await asyncio.to_thread(warmup_chroma_client)
 
+    from app.services.workflow_scheduler import start_workflow_scheduler
+
+    start_workflow_scheduler()
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    from app.services.workflow_scheduler import stop_workflow_scheduler
+
+    stop_workflow_scheduler()
+
 
 @app.get("/")
 def root():

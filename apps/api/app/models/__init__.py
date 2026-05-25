@@ -5,6 +5,14 @@ from .api_key import APIKey
 from .llm_config import LlmConfig
 from .embedding_config import EmbeddingConfig
 from .user_preference import UserPreference
+from .workflow import (
+    WorkflowDefinition,
+    WorkflowRun,
+    WorkflowRunStep,
+    WorkflowSchedule,
+    WorkflowTemplate,
+    WorkflowWebhook,
+)
 
 __all__ = [
     "User",
@@ -18,4 +26,10 @@ __all__ = [
     "LlmConfig",
     "EmbeddingConfig",
     "UserPreference",
+    "WorkflowTemplate",
+    "WorkflowDefinition",
+    "WorkflowRun",
+    "WorkflowRunStep",
+    "WorkflowWebhook",
+    "WorkflowSchedule",
 ]
